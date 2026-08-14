@@ -1,0 +1,11 @@
+.*cache
+.coverage
+.coverage.*
+.DS_Store
+.tox
+.venv
+.vscode
+*.py[co]
+dist
+htmlcov
+site

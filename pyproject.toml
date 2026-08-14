@@ -1,0 +1,250 @@
+[tool.uv]
+# Dependency cooldown
+exclude-newer = "1 week"
+
+
+[build-system]
+requires = ["hatchling<2", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pgbg"]
+
+
+[project]
+dynamic = ["version"]
+name = "pgbg"
+description = "PostgreSQL-Orchestrated Background Threads for Python"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{ name = "Hynek Schlawack", email = "hs@ox.cx" }]
+requires-python = ">=3.14"
+dependencies = [
+    "attrs",
+    "prometheus-client",
+    "psycopg>=3.2.10",  # older versions lose notifications
+    "structlog>=25.3.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+keywords = [
+    "background tasks",
+    "leader election",
+    "postgres",
+    "postgresql",
+    "psycopg",
+]
+
+[project.optional-dependencies]
+sqlalchemy = ["sqlalchemy>=2"]
+
+[project.urls]
+Changelog = "https://github.com/hynek/pgbg/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/hynek/pgbg#readme"
+Funding = "https://github.com/sponsors/hynek"
+GitHub = "https://github.com/hynek/pgbg"
+Mastodon = "https://mastodon.social/@hynek"
+Bluesky = "https://bsky.app/profile/hynek.me"
+
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { local_scheme = "no-local-version" }
+
+
+[dependency-groups]
+tests = [
+    "pytest>=9",
+]
+cov = [
+    { include-group = "tests" },
+    "coverage",
+]
+docs = [
+    "mkdocstrings-python",
+    "zensical",
+]
+sqlalchemy-tests = [
+    "pg8000",
+    "sqlalchemy>=2",
+]
+typing = [
+    "sqlalchemy>=2",
+]
+mypy = [
+    { include-group = "typing" },
+    "mypy",
+]
+pyright = [
+    { include-group = "typing" },
+    "pyright",
+]
+ty = [
+    { include-group = "typing" },
+    "ty>=0.0.21",
+]
+pyrefly = [
+    { include-group = "typing" },
+    "pyrefly",
+]
+lint = [
+    "prek",
+    "ruff",
+]
+tox = [
+    "tox>=4.51.1",
+    "tox-uv-bare",
+]
+dev = [
+    { include-group = "cov" },
+    { include-group = "sqlalchemy-tests" },
+    { include-group = "mypy" },
+    { include-group = "pyright" },
+    { include-group = "ty" },
+    { include-group = "pyrefly" },
+    { include-group = "lint" },
+    { include-group = "tox" },
+]
+
+
+[tool.pytest]
+strict = true
+testpaths = ["tests"]
+addopts = ["-ra", "--import-mode=importlib"]
+log_level = "INFO"
+filterwarnings = ["once::Warning"]
+
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ["pgbg", "tests"]
+
+[tool.coverage.paths]
+source = ["src", ".tox/*-tests/**/site-packages"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+    # defensive code
+    '((case _|if .*|else):\n\s+)?raise AssertionError',
+    # tests
+    '((case _|if .*|else):\n\s+)?pytest.fail',
+]
+
+
+[tool.mypy]
+strict = true
+pretty = true
+show_error_codes = true
+enable_error_code = ["ignore-without-code"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "conftest.*"
+ignore_errors = true
+
+
+[[tool.ty.overrides]]
+include = ["tests", "conftest.py"]
+rules.all = "ignore"
+
+
+[tool.pyright]
+ignore = ["tests", "conftest.py"]
+
+
+[tool.pyrefly]
+project-includes = ["src", "typing_tests", "docs/examples"]
+project-excludes = ["tests",  "conftest.py"]
+ignore-missing-imports = ["*"]
+
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "A",       # shadowing is fine
+    "ANN",     # Mypy is better at this
+    "ARG",     # unused arguments are fine
+    "BLE001",  # sometimes broad exception handling is intentional
+    "C901",    # leave complexity to me
+    "CPY",     # they expect a very specific shape of a copyright notice
+    "COM",     # Formatter takes care of our commas
+    "D",       # We prefer our own docstring style.
+    "E501",    # leave line-length enforcement to formatter
+    "FBT001",  # occasional booleans are fine
+    "FBT003",  # occasional booleans are fine
+    "FIX",     # Yes, we want XXX as a marker.
+    "INP001",  # sometimes we want Python files outside of packages
+    "ISC001",  # conflicts with formatter
+    "PLR0911", # leave complexity to me
+    "PLR0912", # leave complexity to me
+    "PLR0913", # leave complexity to me
+    "PLR0915", # leave complexity to me
+    "PLR0917", # leave complexity to me
+    "RUF009",  # no reason to not use func calls for defaults
+    "S101",    # assert is fine in this codebase
+    "SLF001",  # private members are accessed by friendly functions
+    "TC",      # TYPE_CHECKING breaks runtime-inspection
+    "TD",      # we don't follow other people's todo style
+    "TRY",     # don't care about exception hygiene here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__main__.py" = [
+    "T201",    # the CLI legitimately prints to stdout/stderr
+]
+"*test*" = [
+    "B018",    # useless expression sometimes aren't useless
+    "EM",      # don't care about exceptions hygiene in tests
+    "PLC1901", # empty strings are falsey but also more specific
+    "PLR2004", # magic numbers are fine in tests
+    "PT011",   # broad is fine
+    "PT012",   # sometimes a context needs more than 1 line
+    "RUF012",  # we don't do type annotations in tests
+    "S101",    # assert
+    "S105",    # test passwords can be in-source
+    "S106",    # test passwords can be in-source
+    "S311",    # pseudo-random is fine in tests
+    "S608",    # SQL injection in tests is not a thing
+    "SIM117",  # split context managers can read better in tests
+    "SIM300",  # Yoda rocks in asserts
+    "TRY003",  # don't care about messages inside of class
+]
+"docs/examples/*" = [
+    "T201",    # example code legitimately prints to stdout/stderr
+    "S311",    # pseudo-random is fine in examples
+    "EM",      # don't care about exceptions hygiene in examples
+]
+
+[tool.ruff.lint.isort]
+lines-between-types = 1
+lines-after-imports = 2
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+
+[tool.ruff.format]
+exclude = ["docs/tutorial.md"]
+
+[tool.interrogate]
+omit-covered-files = true
+verbose = 2
+fail-under = 100
+whitelist-regex = ["test_.*"]

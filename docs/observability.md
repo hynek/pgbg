@@ -1,0 +1,84 @@
+# Observability
+
+Structured log events go to the `pgbg` logger via [*structlog*](https://www.structlog.org).
+
+
+## Prometheus metrics
+
+*pgbg* is thoroughly instrumented for the [Prometheus](https://prometheus.io) metrics and monitoring system.
+
+`pgbg_dispatcher_last_cycle_timestamp_seconds{name}`
+:   Timestamp of the dispatcher's last healthy loop cycle.
+    It only advances on healthy loop cycles, so staleness is the alert signal:
+    `time() - pgbg_dispatcher_last_cycle_timestamp_seconds > k * interval` means the dispatch loop is down and not recovering.
+    Give *k* enough slack for the up to 30 seconds of restart backoff.
+
+    The series exists at 0 from the start of the dispatch loop, so the alert also catches a dispatcher that never got going.
+    The *name* label matches the restart metric's.
+
+`pgbg_supervisor_restarts_total{name}`
+:   Crashes that the supervisor restarted after.
+    The supervisor never gives up on a crashing loop[^base], so a chronic failure shows up as a sustained restart rate, not as a dead process.
+    Alert on the rate.
+
+    The series exists at 0 from the supervisor's start, so the very first restart is already visible to `rate()`.
+    For supervised services, the *name* label carries the same value as the service metrics' *service_name*.
+
+[^base]: Except for a `BaseException` such as `SystemExit`: that ends supervision for good and is only visible in the logs.
+
+`pgbg_service_last_work_unit_timestamp_seconds{service_name}`
+:   Timestamp of the service's last completed work unit.
+    Staleness per service is the alert signal.
+    For *elected* services, alert on the fleet-wide maximum – `max by (service_name)` – because healthy followers legitimately sit idle at 0.
+
+    The series exists at 0 from the start of a service's first loop run, without clobbering an earlier stamp.
+    Therefore, a staleness alert never sits in no-data for a service that cannot complete a work unit.
+
+`pgbg_service_lease_overruns_total{service_name}`
+:   Work units that ended after their lease lapsed or was lost.
+    An overrun means the lease was not kept alive while the work unit ran (renewals failed, the whole process stalled, or the lease was taken away) so another leader can exist.
+
+    See the [overlap caveat](leader-election.md) for what that implies for your work.
+
+`pgbg_service_lease_failures_total{service_name}`
+:   Lease operations (elections and renewals) that failed and were downgraded to a warning.
+
+    On a *follower*, a sustained rate means that it cannot win an election even though the fleet may look healthy: ergo a latent loss of failover capacity.
+
+    On the *leader*, it means that it cannot renew and is about to lose its leadership.
+
+    The leadership metric below tells you which of the two you are looking at.
+
+`pgbg_service_leadership_confirmed_timestamp_seconds{service_name}`
+:   Timestamp of this process's last confirmed leadership for the service; 0 on followers.
+
+    It is restamped on every confirmed election and renewal, and reset to 0 on loss and resignation,
+    so the fleet-wide maximum is always the current leader's last confirmation.
+    A fleet-wide maximum older than the service's `lease_ttl` means that no process can confirm leadership.
+
+
+### Alerting on leadership
+
+Here's an example Prometheus alert that makes sure there is always a leader.
+
+Followers export the leadership metric as 0, so the fleet-wide maximum is the current leader's last confirmation, and a stale maximum means that no process can confirm leadership.
+
+```yaml
+groups:
+  - name: pgbg
+    rules:
+      - alert: PgbgServiceWithoutLeader
+        expr: >-
+          time()
+          - max by (service_name)
+            (pgbg_service_leadership_confirmed_timestamp_seconds)
+          > 60
+        for: 1m
+        annotations:
+          summary: >-
+            No process has confirmed leadership for service
+            {{ $labels.service_name }} in over a minute.
+```
+
+Keep the threshold above the service's `lease_ttl`, because a leader whose renewals fail keeps its lease for up to one TTL after its last confirmation.
+The rule can only fire while at least one worker is scraped, so alert on the absence of your workers separately.

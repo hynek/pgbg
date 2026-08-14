@@ -1,0 +1,217 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORCE_COLOR: "1" # Make tools pretty.
+  UV_LOCKED: "1" # Crash loudly on uv.lock vs pyproject.toml inconsistencies
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build-package:
+    name: Build & verify package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: hynek/build-and-inspect-python-package@2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1
+        id: baipp
+
+    outputs:
+      # Used to define the matrix for tests below. The value is based on
+      # packaging metadata (trove classifiers).
+      python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
+
+  tests:
+    name: Tests on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04 # the version affects postgres paths!
+    needs: build-package
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Created by the build-and-inspect-python-package action above.
+        python-version: ${{ fromJson(needs.build-package.outputs.python-versions) }}
+
+    env:
+      PYTHON: ${{ matrix.python-version }}
+
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Packages
+          path: dist
+
+      - name: Extract source distribution
+        run: |
+          tar xf dist/*.tar.gz --strip-components=1
+          rm -rf src
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
+
+      - name: Start PostgreSQL
+        run: |
+          printf '%s\n' \
+            'local all all              trust' \
+            'host  all all 127.0.0.1/32 trust' \
+            'host  all all ::1/128      trust' \
+            | sudo tee /etc/postgresql/16/main/pg_hba.conf >/dev/null
+
+          sudo systemctl start postgresql.service
+
+          until sudo -u postgres pg_isready -q; do sleep 1; done
+
+      - name: Run tests
+        run: >
+          uv run --only-group tox
+          tox run
+          --installpkg dist/*.whl
+          -f ${PYTHON}-tests
+
+      - name: Upload coverage data
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-data-${{ matrix.python-version }}
+          path: .coverage.*
+          include-hidden-files: true
+          if-no-files-found: error
+
+  coverage:
+    name: Require 100% coverage
+    runs-on: ubuntu-latest
+    needs: tests
+    if: always()
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
+
+      - name: Download coverage data
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+
+      - name: Combine and report coverage
+        run: |
+          uv run --only-group cov coverage combine
+          uv run --only-group cov coverage html --skip-covered --skip-empty
+          uv run --only-group cov coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          uv run --only-group cov coverage report --fail-under=100
+
+      - name: Upload HTML report after a failure
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: html-report
+          path: htmlcov
+        if: ${{ failure() }}
+
+  typing:
+    name: Check public types
+    runs-on: ubuntu-latest
+    needs: build-package
+
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Packages
+          path: dist
+
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
+
+      - name: Run type checkers
+        run: >
+          uv run --only-group tox
+          tox run
+          --installpkg dist/*.whl
+          -f typing
+
+  lint:
+    name: Lint repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
+
+      - name: Run linters
+        run: |
+          uv run --only-group tox
+          tox run
+          -f lint
+
+  install-dev:
+    name: Check locked development environment
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
+
+      - run: uv sync
+
+      - name: Import public modules
+        run: |
+          .venv/bin/python -Ic 'import pgbg'
+          .venv/bin/python -Ic 'import pgbg.sqlalchemy'
+
+  required-checks-pass:
+    name: Require all checks
+    if: always()
+    needs:
+      - coverage
+      - install-dev
+      - lint
+      - typing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Evaluate required jobs
+        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
