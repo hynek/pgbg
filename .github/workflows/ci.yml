@@ -177,7 +177,7 @@ jobs:
       - uses: hynek/setup-cached-uv@34e35d30f1ebc7421a5cc733bca38dcc62603960 # v2.6.0
 
       - name: Run linters
-        run: |
+        run: >
           uv run --only-group tox
           tox run
           -f lint
