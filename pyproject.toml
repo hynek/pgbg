@@ -20,7 +20,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Hynek Schlawack", email = "hs@ox.cx" }]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "attrs",
     "prometheus-client",
@@ -29,6 +29,8 @@ dependencies = [
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
