@@ -47,7 +47,7 @@ sqlalchemy = ["sqlalchemy>=2"]
 
 [project.urls]
 Changelog = "https://github.com/hynek/pgbg/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/hynek/pgbg#readme"
+Documentation = "https://pgbg.hynek.me/"
 Funding = "https://github.com/sponsors/hynek"
 GitHub = "https://github.com/hynek/pgbg"
 Mastodon = "https://mastodon.social/@hynek"
