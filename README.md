@@ -1,8 +1,8 @@
 # *pgbg*: Postgres-orchestrated background threads for Python
 
+[![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20The%20Docs-black)](https://pgbg.hynek.me)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C06524)](https://github.com/hynek/pgbg/blob/main/LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/pgbg)](https://pypi.org/project/pgbg/)
-[![CI](https://github.com/hynek/pgbg/actions/workflows/ci.yml/badge.svg)](https://github.com/hynek/pgbg/actions/workflows/ci.yml)
 [![No AI slop inside.](https://img.shields.io/badge/no-slop-purple)](https://github.com/hynek/pgbg/blob/main/.github/AI_POLICY.md)
 
 <!-- --8<-- [start:spiel] -->
@@ -16,7 +16,7 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
 
 - A **supervisor** that runs your code as a *service*: in a loop, in a background thread.
   If your code crashes, the supervisor restarts the loop.
-  Write [crash-only](https://en.wikipedia.org/wiki/Crash-only_software) code, *pgbg* takes care of the rest.
+  Write [crash-only](https://pgbg.hynek.me/latest/glossary/#crash-only) code, *pgbg* takes care of the rest.
 
   Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
 
