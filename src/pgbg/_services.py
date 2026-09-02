@@ -30,24 +30,24 @@ logger = structlog.stdlib.get_logger("pgbg")
 SERVICE_LAST_WORK_UNIT = Gauge(
     "pgbg_service_last_work_unit_timestamp_seconds",
     "Timestamp of a service's last completed work unit",
-    ["service_name"],
+    ["name"],
 )
 SERVICE_LEASE_OVERRUNS = Counter(
     "pgbg_service_lease_overruns_total",
     "Number of work units that ended after their lease lapsed or was lost",
-    ["service_name"],
+    ["name"],
 )
 SERVICE_LEASE_FAILURES = Counter(
     "pgbg_service_lease_failures_total",
     "Number of lease operations (elections and renewals) that failed and"
     " were downgraded to a warning",
-    ["service_name"],
+    ["name"],
 )
 SERVICE_LEADERSHIP_CONFIRMED = Gauge(
     "pgbg_service_leadership_confirmed_timestamp_seconds",
     "Timestamp of this process's last confirmed leadership for a service;"
     " 0 while it is not the leader",
-    ["service_name"],
+    ["name"],
 )
 
 _DEFAULT_LEASE_TTL_GRACE = 10.0
@@ -135,25 +135,25 @@ def _set_statement_timeout_for_transaction(
 def _attempt_election(
     conn: psycopg.Connection[Any],
     leases: psycopg.sql.Identifier,
-    service_name: str,
+    name: str,
     worker_id: str,
     ttl_seconds: float,
     *,
     timeout_seconds: float,
 ) -> _LeaseRecord | None:
     """
-    Try to become the leader for *service_name*.
+    Try to become the leader for *name*.
     """
     with conn.transaction():
         _set_statement_timeout_for_transaction(conn, timeout_seconds)
         conn.execute(
             SQL_DELETE_LAPSED_LEASES.format(leases=leases),
-            {"name": service_name},
+            {"name": name},
         )
         row = conn.execute(
             SQL_INSERT_LEASE.format(leases=leases),
             {
-                "name": service_name,
+                "name": name,
                 "worker_id": worker_id,
                 "ttl": ttl_seconds,
             },
@@ -168,7 +168,7 @@ def _attempt_election(
 def _attempt_renewal(
     conn: psycopg.Connection[Any],
     leases: psycopg.sql.Identifier,
-    service_name: str,
+    name: str,
     worker_id: str,
     elected_at: datetime,
     ttl_seconds: float,
@@ -183,7 +183,7 @@ def _attempt_renewal(
         row = conn.execute(
             SQL_RENEW.format(leases=leases),
             {
-                "name": service_name,
+                "name": name,
                 "worker_id": worker_id,
                 "elected_at": elected_at,
                 "ttl": ttl_seconds,
@@ -199,7 +199,7 @@ def _attempt_renewal(
 def _resign_as_leader(
     conn: psycopg.Connection[Any],
     leases: psycopg.sql.Identifier,
-    service_name: str,
+    name: str,
     worker_id: str,
     elected_at: datetime,
     *,
@@ -213,7 +213,7 @@ def _resign_as_leader(
         conn.execute(
             SQL_RESIGN.format(leases=leases),
             {
-                "name": service_name,
+                "name": name,
                 "worker_id": worker_id,
                 "elected_at": elected_at,
             },
@@ -230,7 +230,7 @@ class LeaderTerm:
     `renew_if_due` (renewal under running work units) keep that memory honest.
     """
 
-    service_name: str
+    name: str
     worker_id: str
     lease_ttl: float
     # Provides the short-lived connections for elections, renewals, and the
@@ -330,10 +330,10 @@ class LeaderTerm:
             psycopg.errors.QueryCanceled,
             psycopg.errors.LockNotAvailable,
         ):
-            SERVICE_LEASE_FAILURES.labels(service_name=self.service_name).inc()
+            SERVICE_LEASE_FAILURES.labels(name=self.name).inc()
             logger.warning(
                 "service_leader.lease_failed",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
                 exc_info=True,
             )
@@ -359,12 +359,10 @@ class LeaderTerm:
             due = not expired and now >= self._renew_at
 
         if expired:
-            SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name=self.service_name
-            ).set(0)
+            SERVICE_LEADERSHIP_CONFIRMED.labels(name=self.name).set(0)
             logger.info(
                 "service_leader.lost",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
                 reason="expired",
             )
@@ -390,7 +388,7 @@ class LeaderTerm:
         # Wall time, not *t0*: Prometheus needs unix time, like the other
         # gauges.
         SERVICE_LEADERSHIP_CONFIRMED.labels(
-            service_name=self.service_name
+            name=self.name
         ).set_to_current_time()
 
     def _elect(self) -> None:
@@ -402,7 +400,7 @@ class LeaderTerm:
             record = _attempt_election(
                 conn,
                 self.leases,
-                self.service_name,
+                self.name,
                 self.worker_id,
                 self.lease_ttl,
                 timeout_seconds=self._statement_timeout,
@@ -415,7 +413,7 @@ class LeaderTerm:
 
         logger.info(
             "service_leader.elected",
-            service_name=self.service_name,
+            name=self.name,
             worker_id=self.worker_id,
         )
 
@@ -439,7 +437,7 @@ class LeaderTerm:
             record = _attempt_renewal(
                 conn,
                 self.leases,
-                self.service_name,
+                self.name,
                 self.worker_id,
                 elected_at,
                 self.lease_ttl,
@@ -458,12 +456,10 @@ class LeaderTerm:
                 self._record_elected(t0, record)
 
         if record is None:
-            SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name=self.service_name
-            ).set(0)
+            SERVICE_LEADERSHIP_CONFIRMED.labels(name=self.name).set(0)
             logger.info(
                 "service_leader.lost",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
                 reason="deposed",
             )
@@ -483,7 +479,7 @@ class LeaderTerm:
         keeper = threading.Thread(
             target=self._keep_alive,
             args=(keeper_stop,),
-            name=f"lease-keeper-{self.service_name}",
+            name=f"lease-keeper-{self.name}",
             daemon=True,
         )
         keeper.start()
@@ -507,7 +503,7 @@ class LeaderTerm:
             # Even a SystemExit must not erase the record that the keeper died.
             logger.exception(
                 "service_leader.keeper_died",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
             )
 
@@ -523,10 +519,10 @@ class LeaderTerm:
         try:
             self.renew_if_due()
         except Exception:
-            SERVICE_LEASE_FAILURES.labels(service_name=self.service_name).inc()
+            SERVICE_LEASE_FAILURES.labels(name=self.name).inc()
             logger.warning(
                 "service_leader.lease_failed",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
                 exc_info=True,
             )
@@ -545,7 +541,7 @@ class LeaderTerm:
                 _resign_as_leader(
                     conn,
                     self.leases,
-                    self.service_name,
+                    self.name,
                     self.worker_id,
                     record.elected_at,
                     timeout_seconds=1,
@@ -553,18 +549,16 @@ class LeaderTerm:
 
             logger.info(
                 "service_leader.resigned",
-                service_name=self.service_name,
+                name=self.name,
                 worker_id=self.worker_id,
             )
             with self._lock:
                 self._record = None
-            SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name=self.service_name
-            ).set(0)
+            SERVICE_LEADERSHIP_CONFIRMED.labels(name=self.name).set(0)
         except Exception:
             logger.warning(
                 "service_leader.resign_failed",
-                service_name=self.service_name,
+                name=self.name,
                 exc_info=True,
             )
 
@@ -653,7 +647,7 @@ class Service:
     """
 
     _interval: float = attrs.field(alias="interval")
-    _service_name: str = attrs.field(alias="service_name")
+    _name: str = attrs.field(alias="name")
     _wakeup: Wakeup = attrs.field(alias="wakeup")
     _work_factory: WorkFactory = attrs.field(alias="work_factory")
     has_completed_cycle: bool = attrs.field(init=False, default=False)
@@ -663,7 +657,7 @@ class Service:
         cls,
         work_factory: WorkFactory,
         *,
-        service_name: str,
+        name: str,
         wakeup: Wakeup,
         interval: float = 1.0,
     ) -> Self:
@@ -678,7 +672,7 @@ class Service:
                 See [`WorkFactory`][pgbg.typing.WorkFactory] and
                 [Services](services.md).
 
-            service_name:
+            name:
                 Names the service in logs and metrics. Must not be empty.
 
             wakeup:
@@ -701,19 +695,19 @@ class Service:
 
         Raises:
             ValueError:
-                If *interval* or *service_name* are invalid.
+                If *interval* or *name* are invalid.
         """
         if interval <= 0 or not math.isfinite(interval):
             msg = "interval must be > 0"
             raise ValueError(msg)
 
-        if not service_name:
-            msg = "service_name must not be empty"
+        if not name:
+            msg = "name must not be empty"
             raise ValueError(msg)
 
         return cls(
             interval=interval,
-            service_name=service_name,
+            name=name,
             wakeup=wakeup,
             work_factory=work_factory,
         )
@@ -735,8 +729,8 @@ class Service:
         """
         self.has_completed_cycle = False
         # Create the series at 0 without clobbering an earlier stamp.
-        SERVICE_LAST_WORK_UNIT.labels(service_name=self._service_name)
-        log = logger.bind(func="service", service_name=self._service_name)
+        SERVICE_LAST_WORK_UNIT.labels(name=self._name)
+        log = logger.bind(func="service", name=self._name)
         log.info("service.started")
 
         with self._work_factory() as do_work:
@@ -774,7 +768,7 @@ class Service:
         Wait for a wakeup, falling back to the interval timeout.
         """
         if self._wakeup.wait(self._interval):
-            logger.debug("service.notified", service_name=self._service_name)
+            logger.debug("service.notified", name=self._name)
 
     def _run_once(self, do_work: DoWork, stop: threading.Event) -> None:
         """
@@ -785,7 +779,7 @@ class Service:
             self.has_completed_cycle = True
 
             SERVICE_LAST_WORK_UNIT.labels(
-                service_name=self._service_name
+                name=self._name
             ).set_to_current_time()
 
             if not again or stop.is_set():
@@ -828,7 +822,7 @@ class SupervisedService:
         """
         service = Service.build(
             work_factory,
-            service_name=name,
+            name=name,
             wakeup=wakeup,
             interval=interval,
         )
@@ -921,7 +915,7 @@ class ElectedService:
         work_factory: WorkFactory,
         get_connection: ConnectionProvider,
         *,
-        service_name: str,
+        name: str,
         worker_id: str,
         wakeup: Wakeup,
         leases: str = "pgbg_leases",
@@ -938,7 +932,7 @@ class ElectedService:
         plus the following election-related arguments:
 
         Args:
-            service_name:
+            name:
                 Like in [`Service`][pgbg.Service], but additionally also names
                 the leadership lease row.
 
@@ -962,15 +956,15 @@ class ElectedService:
 
         Raises:
             ValueError:
-                If *interval*, *service_name*, *leases*, *worker_id*, or
+                If *interval*, *name*, *leases*, *worker_id*, or
                 *lease_ttl* are invalid.
         """
         if interval <= 0 or not math.isfinite(interval):
             msg = "interval must be > 0"
             raise ValueError(msg)
 
-        if not service_name:
-            msg = "service_name must not be empty"
+        if not name:
+            msg = "name must not be empty"
             raise ValueError(msg)
 
         if not worker_id:
@@ -990,7 +984,7 @@ class ElectedService:
         return cls(
             interval=interval,
             term=LeaderTerm(
-                service_name,
+                name,
                 worker_id,
                 lease_ttl,
                 get_connection=get_connection,
@@ -1023,12 +1017,10 @@ class ElectedService:
         """
         self.has_completed_cycle = False
         # Create the series at 0 without clobbering an earlier stamp.
-        SERVICE_LAST_WORK_UNIT.labels(service_name=self._term.service_name)
+        SERVICE_LAST_WORK_UNIT.labels(name=self._term.name)
         if not self._term.is_leader:
-            SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name=self._term.service_name
-            ).set(0)
-        log = logger.bind(func="service", service_name=self._term.service_name)
+            SERVICE_LEADERSHIP_CONFIRMED.labels(name=self._term.name).set(0)
+        log = logger.bind(func="service", name=self._term.name)
         log.info("service.started")
 
         # The factory is entered before the keeper starts: leadership keeps
@@ -1078,7 +1070,7 @@ class ElectedService:
         if self._wakeup.wait(self._interval):
             logger.debug(
                 "service.notified",
-                service_name=self._term.service_name,
+                name=self._term.name,
             )
 
     def _run_once(self, do_work: DoWork, stop: threading.Event) -> None:
@@ -1103,12 +1095,10 @@ class ElectedService:
                 deadline = lease_deadline if current is None else current
                 overrun = self._term.time_source() - deadline
                 if current is None or overrun >= 0:
-                    SERVICE_LEASE_OVERRUNS.labels(
-                        service_name=self._term.service_name
-                    ).inc()
+                    SERVICE_LEASE_OVERRUNS.labels(name=self._term.name).inc()
                     logger.warning(
                         "service.lease_overrun",
-                        service_name=self._term.service_name,
+                        name=self._term.name,
                         worker_id=self._term.worker_id,
                         overrun_seconds=max(overrun, 0.0),
                         reason="lost" if current is None else "lapsed",
@@ -1117,7 +1107,7 @@ class ElectedService:
             self.has_completed_cycle = True
 
             SERVICE_LAST_WORK_UNIT.labels(
-                service_name=self._term.service_name
+                name=self._term.name
             ).set_to_current_time()
 
             if not again or stop.is_set():
@@ -1169,7 +1159,7 @@ class SupervisedElectedService:
         service = ElectedService.build(
             work_factory,
             get_connection,
-            service_name=name,
+            name=name,
             leases=leases,
             worker_id=worker_id,
             wakeup=wakeup,

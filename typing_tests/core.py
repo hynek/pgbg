@@ -142,7 +142,7 @@ with SupervisedDispatcher.start(connect) as handle:
 service = ElectedService.build(
     work_factory,
     connect,
-    service_name="orders",
+    name="orders",
     leases="public.service_leases",
     worker_id="worker-01",
     wakeup=subscription,
@@ -153,7 +153,7 @@ elected_loop: Loop = service
 
 plain = Service.build(
     work_factory,
-    service_name="stats",
+    name="stats",
     wakeup=custom_wakeup,
     interval=5.0,
 )

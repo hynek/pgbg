@@ -158,7 +158,7 @@ def _build_service(provider):
         *,
         work_factory=None,
         term=None,
-        service_name="test-service",
+        name="test-service",
         wakeup=None,
         interval=30,
         worker_id="test-worker",
@@ -168,7 +168,7 @@ def _build_service(provider):
         """
         if term is None:
             term = LeaderTerm(
-                service_name,
+                name,
                 worker_id,
                 60,
                 get_connection=provider,
@@ -210,7 +210,7 @@ def _run_service(provider):
         interval=0.05,
         initial_backoff=0.01,
         lease_ttl=None,
-        service_name="test-service",
+        name="test-service",
     ):
         """
         Start a supervised service.
@@ -220,7 +220,7 @@ def _run_service(provider):
             if work_factory is not None
             else as_work_factory(noop_work),
             provider,
-            name=service_name,
+            name=name,
             leases=_LEASES_NAME,
             worker_id=worker_id or f"test-worker-{len(handles)}",
             wakeup=wakeup if wakeup is not None else IntervalOnlyWakeup(),
@@ -273,7 +273,7 @@ class TestLeadershipElections:
         assert not term_a.is_leader
         assert term_b.is_leader
 
-    def test_independent_per_service_name(self, pgbg_dsn, provider):
+    def test_independent_per_name(self, pgbg_dsn, provider):
         """
         Two differently-named services lease independently, both leading at
         once.
@@ -581,7 +581,7 @@ class TestLeaseStatementTimeouts:
             leases=_LEASES,
         )
         failures_before = SERVICE_LEASE_FAILURES.labels(
-            service_name="timeout-elect"
+            name="timeout-elect"
         )._value.get()
 
         with (
@@ -596,9 +596,7 @@ class TestLeaseStatementTimeouts:
         ]
         assert (
             failures_before + 1
-            == SERVICE_LEASE_FAILURES.labels(
-                service_name="timeout-elect"
-            )._value.get()
+            == SERVICE_LEASE_FAILURES.labels(name="timeout-elect")._value.get()
         )
 
     @pytest.mark.usefixtures("locked_leaders")
@@ -820,7 +818,7 @@ class TestRunOnce:
             get_connection=provider,
             leases=_LEASES,
         )
-        counter = SERVICE_LEASE_OVERRUNS.labels(service_name="test-overrun")
+        counter = SERVICE_LEASE_OVERRUNS.labels(name="test-overrun")
         counter_before = counter._value.get()
 
         def slow_work():
@@ -844,7 +842,7 @@ class TestRunOnce:
 
         assert counter_before + 1 == counter._value.get()
         assert 1 == len(overruns)
-        assert "test-overrun" == overruns[0]["service_name"]
+        assert "test-overrun" == overruns[0]["name"]
         assert "worker" == overruns[0]["worker_id"]
         assert 1 == overruns[0]["overrun_seconds"]
         assert "lapsed" == overruns[0]["reason"]
@@ -857,7 +855,7 @@ class TestRunOnce:
         {"interval": 0},
         {"interval": -1.0},
         {"worker_id": ""},
-        {"service_name": ""},
+        {"name": ""},
         {"leases": ""},
         {"leases": "public..leases"},
         {"lease_ttl": 0},
@@ -869,7 +867,7 @@ def test_service_thread_build_validates_arguments(provider, bad_kwargs):
     `build` rejects invalid arguments before constructing the service.
     """
     base_kwargs = {
-        "service_name": "test-validate",
+        "name": "test-validate",
         "leases": _LEASES_NAME,
         "worker_id": "test-validate-worker",
         "wakeup": IntervalOnlyWakeup(),
@@ -1106,7 +1104,7 @@ class TestElectedAtGauge:
         assert (
             before
             <= SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-elect"
+                name="gauge-elect"
             )._value.get()
         )
 
@@ -1134,7 +1132,7 @@ class TestElectedAtGauge:
         assert (
             before
             <= SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-renew"
+                name="gauge-renew"
             )._value.get()
         )
 
@@ -1160,7 +1158,7 @@ class TestElectedAtGauge:
         assert (
             0.0
             == SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-expire"
+                name="gauge-expire"
             )._value.get()
         )
 
@@ -1187,7 +1185,7 @@ class TestElectedAtGauge:
         assert (
             0.0
             == SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-depose"
+                name="gauge-depose"
             )._value.get()
         )
 
@@ -1210,7 +1208,7 @@ class TestElectedAtGauge:
         assert (
             0.0
             == SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-resign"
+                name="gauge-resign"
             )._value.get()
         )
 
@@ -1219,7 +1217,7 @@ class TestElectedAtGauge:
         A run that starts without a lease creates the series at 0, so absence
         cannot hide the staleness signal.
         """
-        service = build_service(service_name="gauge-init")
+        service = build_service(name="gauge-init")
         stop = threading.Event()
         stop.set()
 
@@ -1228,7 +1226,7 @@ class TestElectedAtGauge:
         assert (
             0.0
             == SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-init"
+                name="gauge-init"
             )._value.get()
         )
 
@@ -1248,7 +1246,7 @@ class TestElectedAtGauge:
         )
         term.ensure()
         stamped = SERVICE_LEADERSHIP_CONFIRMED.labels(
-            service_name="gauge-keep"
+            name="gauge-keep"
         )._value.get()
 
         service = build_service(term=term)
@@ -1259,7 +1257,7 @@ class TestElectedAtGauge:
         assert (
             stamped
             == SERVICE_LEADERSHIP_CONFIRMED.labels(
-                service_name="gauge-keep"
+                name="gauge-keep"
             )._value.get()
         )
 
@@ -1419,7 +1417,7 @@ class TestRenewIfDue:
 
         term.get_connection = failing_provider
         failures_before = SERVICE_LEASE_FAILURES.labels(
-            service_name="test-hb-fail"
+            name="test-hb-fail"
         )._value.get()
 
         with structlog.testing.capture_logs() as logs:
@@ -1431,9 +1429,7 @@ class TestRenewIfDue:
         assert term.is_leader  # still locally valid; retried next do_work
         assert (
             failures_before + 1
-            == SERVICE_LEASE_FAILURES.labels(
-                service_name="test-hb-fail"
-            )._value.get()
+            == SERVICE_LEASE_FAILURES.labels(name="test-hb-fail")._value.get()
         )
 
 
@@ -1470,7 +1466,7 @@ class TestLeaseKeeper:
         A work unit far slower than the TTL neither loses the lease nor counts as an
         overrun, because the keeper renews under it.
         """
-        counter = SERVICE_LEASE_OVERRUNS.labels(service_name="test-service")
+        counter = SERVICE_LEASE_OVERRUNS.labels(name="test-service")
         counter_before = counter._value.get()
         worked = threading.Event()
         worked_again = threading.Event()
@@ -1501,7 +1497,7 @@ class TestLeaseKeeper:
         The keeper thread lives while the service runs and is joined when it
         stops.
         """
-        handle = run_service(service_name="test-keeper-life")
+        handle = run_service(name="test-keeper-life")
 
         wait_for_thread("lease-keeper-test-keeper-life")
 
@@ -1518,7 +1514,7 @@ class TestLeaseKeeper:
         Losing the lease under a running work unit drops leadership promptly
         and counts the work unit as an overrun when it ends.
         """
-        counter = SERVICE_LEASE_OVERRUNS.labels(service_name="test-service")
+        counter = SERVICE_LEASE_OVERRUNS.labels(name="test-service")
         counter_before = counter._value.get()
         in_unit = threading.Event()
 
@@ -1649,7 +1645,7 @@ class TestService:
 
         service = Service.build(
             as_work_factory(do_work),
-            service_name="plain",
+            name="plain",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1663,11 +1659,11 @@ class TestService:
         Every unit stamps the last-work-unit gauge for this service.
         """
         before = SERVICE_LAST_WORK_UNIT.labels(
-            service_name="plain-service"
+            name="plain-service"
         )._value.get()
         service = Service.build(
             as_work_factory(noop_work),
-            service_name="plain-service",
+            name="plain-service",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1676,9 +1672,7 @@ class TestService:
 
         assert (
             before
-            < SERVICE_LAST_WORK_UNIT.labels(
-                service_name="plain-service"
-            )._value.get()
+            < SERVICE_LAST_WORK_UNIT.labels(name="plain-service")._value.get()
         )
 
     def test_run_returns_without_waiting_when_stopped_mid_work_unit(self):
@@ -1697,7 +1691,7 @@ class TestService:
 
         service = Service.build(
             as_work_factory(do_work),
-            service_name="plain-stop",
+            name="plain-stop",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1708,14 +1702,14 @@ class TestService:
 
     @pytest.mark.parametrize(
         "bad_kwargs",
-        [{"interval": 0}, {"service_name": ""}],
+        [{"interval": 0}, {"name": ""}],
     )
     def test_build_validates_arguments(self, bad_kwargs):
         """
         Bad intervals and empty names are rejected up front.
         """
         kwargs = {
-            "service_name": "plain",
+            "name": "plain",
             "wakeup": IntervalOnlyWakeup(),
             "interval": 30,
         } | bad_kwargs
@@ -1742,7 +1736,7 @@ class TestService:
 
         service = Service.build(
             as_work_factory(do_work),
-            service_name="plain-drain-crash",
+            name="plain-drain-crash",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1766,7 +1760,7 @@ class TestService:
 
         service = Service.build(
             as_work_factory(do_work),
-            service_name="plain-birth-crash",
+            name="plain-birth-crash",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1776,7 +1770,7 @@ class TestService:
 
         assert 0.0 == REGISTRY.get_sample_value(
             "pgbg_service_last_work_unit_timestamp_seconds",
-            {"service_name": "plain-birth-crash"},
+            {"name": "plain-birth-crash"},
         )
 
     def test_wait_for_wakeup_times_out_without_a_wake(self):
@@ -1788,7 +1782,7 @@ class TestService:
         assert True is wakeup.wait(0)
         service = Service.build(
             as_work_factory(noop_work),
-            service_name="plain-timeout",
+            name="plain-timeout",
             wakeup=wakeup,
             interval=0.01,
         )
@@ -1806,7 +1800,7 @@ class TestService:
         wakeup.wake()
         service = Service.build(
             as_work_factory(noop_work),
-            service_name="plain-woken",
+            name="plain-woken",
             wakeup=wakeup,
             interval=30,
         )
@@ -1925,7 +1919,7 @@ class TestWorkFactory:
 
         service = Service.build(
             work_factory,
-            service_name="factory-lifecycle",
+            name="factory-lifecycle",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -1959,7 +1953,7 @@ class TestWorkFactory:
 
         service = Service.build(
             work_factory,
-            service_name="factory-crash",
+            name="factory-crash",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -2027,7 +2021,7 @@ class TestWorkFactory:
 
         service = Service.build(
             swallowing_factory,
-            service_name="factory-swallow",
+            name="factory-swallow",
             wakeup=IntervalOnlyWakeup(),
             interval=30,
         )
@@ -2058,7 +2052,7 @@ class TestWorkFactory:
 
         service = build_service(
             work_factory=swallowing_factory,
-            service_name="factory-swallow-elected",
+            name="factory-swallow-elected",
         )
 
         with pytest.raises(SuppressedCrashError):
