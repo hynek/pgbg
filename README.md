@@ -28,7 +28,7 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
 Background tasks are **not** a traditional worker queue[^but].
 Common use cases include:
 
-- Periodic cleanup duties for expired caches or sessions.
+- Periodic cleanup duties for [expired caches](https://psycache.hynek.me/en/latest/cleanup/#pgbg) or sessions.
 - Maintenance of eventually consistent read models.
 - Lightweight transactional background tasks with the [outbox pattern](https://en.wikipedia.org/wiki/Inbox_and_outbox_pattern).
 
