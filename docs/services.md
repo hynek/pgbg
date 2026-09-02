@@ -70,7 +70,7 @@ def make_work() -> Generator[DoWork]:
 with pgbg.SupervisedService.start(
     make_work,
     name="example-thread",
-    wakeup=pgbg.IntervalOnlyWakeup(),  # only wake up on intervals
+    wakeup=pgbg.IntervalOnlyWakeup(),
 ) as svc:
     # do_work runs in the background until we exit this context manager
     ...
