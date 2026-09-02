@@ -1,4 +1,6 @@
-# *pgbg*: PostgreSQL-orchestrated background threads for Python
+# *pgbg*
+
+*PostgreSQL-orchestrated background threads for Python*
 
 [![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20Them!-black)](https://pgbg.hynek.me)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C06524)](https://github.com/hynek/pgbg/blob/main/LICENSE)
@@ -9,7 +11,7 @@
 <!-- --8<-- [start:spiel] -->
 POV: you want a framework-agnostic way to reliably run a plain[^non-async] function or method in the background, repeatedly, but not all the time.
 
-[^non-async]: No `async`.
+[^non-async]: As in: not `async`.
 
 *pgbg* comes to the rescue with:
 
