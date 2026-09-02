@@ -27,7 +27,7 @@ def main() -> None:
         pgbg.as_work_factory(do_work),
         name="example-thread",
         wakeup=pgbg.IntervalOnlyWakeup(),  # only wake up on intervals
-        interval=2,  # which are 2 seconds
+        interval=2,  # which are 2 seconds long
     )
 
     try:
