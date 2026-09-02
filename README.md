@@ -41,9 +41,13 @@ The core needs and supports only [Psycopg 3](https://www.psycopg.org/psycopg3/do
 
 <!-- --8<-- [end:spiel] -->
 
+Check out our [step-by-step tutorial](https://pgbg.hynek.me/latest/tutorial/) to get an instant feel for the features!
+
+
 ## Installation
 
 The package is available on [PyPI under the `pgbg` name](https://pypi.org/project/pgbg/).
+It comes with an optional extra `sqlalchemy` (`uv pip install 'pgbg[sqlalchemy]'`), but that currently only adds a `SQLAlchemy>2` lower pin.
 
 
 ## Documentation
