@@ -18,7 +18,7 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
   If your code crashes, the supervisor restarts the loop.
   Write [crash-only](https://pgbg.hynek.me/latest/glossary/#crash-only) code, *pgbg* takes care of the rest.
 
-  Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
+    Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
 
 - PostgreSQL-based **leader election with automatic failover**.
   Make sure only one process runs work at a time.
