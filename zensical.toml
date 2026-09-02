@@ -1,4 +1,5 @@
 [project]
+strict = true
 site_name = "pgbg"
 site_description = "A Python toolkit for PostgreSQL-coordinated background work: LISTEN/NOTIFY dispatch, loop supervision, and leader-elected service threads."
 site_author = "Hynek Schlawack"
