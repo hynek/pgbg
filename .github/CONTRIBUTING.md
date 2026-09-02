@@ -22,7 +22,7 @@ It's people like *you* who make this project such a great tool for everyone.
   See also our [AI policy][llm].
 
 - Very relatedly, our pull request check list is our mandatory [Van Halen test](https://en.wikipedia.org/wiki/Van_Halen_test).
-  Sadly, the current state of the world has forced us into being stricter about policies -- sorry fellow humans!
+  Sadly, the current state of the world has forced us into being stricter about policies – sorry fellow humans!
 
 - Try to limit each pull request to *one* change only.
 
@@ -49,7 +49,7 @@ It's people like *you* who make this project such a great tool for everyone.
 
 ### PostgreSQL
 
-The test suite requires a running Postgres database that is accessible via the `postgresql://postgres@127.0.0.1/postgres` DSN (no password).
+The test suite requires a running PostgreSQL database that is accessible via the `postgresql://postgres@127.0.0.1/postgres` DSN (no password).
 It will use it only to create a database `pgbg` with a no-password user `pgbg` that is used for the actual tests.
 
 
@@ -64,16 +64,16 @@ Finally, **clone** it using one of the alternatives that you can copy-paste by p
 You can (and should) run our test suite using [*tox*](https://tox.wiki/), and keep in mind that `tox run-parallel` is much faster than `tox run`.
 However, you'll probably want a more traditional environment as well.
 
-We recommend using the Python version from the `.python-version-default` file in the project's root directory, because that's the one that is used in the CI by default, too.
+We recommend using the Python version from the `.python-version` file in the project's root directory, because that's the one that is used in the CI by default, too.
 
 We use a fully-locked development environment based on [*uv*](https://docs.astral.sh/uv/) and a checked-in `uv.lock`, so the easiest way to get started is to [install *uv*] and run `uv run pytest` to run the tests immediately.
 
-If you'd like a traditional virtual environment, run `uv sync --python=$(cat .python-version-default)` and it will create one named `.venv` with the correct Python version and all the dependencies installed -- including *tox*.
+If you'd like a traditional virtual environment, run `uv sync` and it will create one named `.venv` with the correct Python version and all the dependencies installed – including *tox*.
 
 If you're using [*direnv*](https://direnv.net), you can automate the creation and activation of the project's virtual environment with the correct Python version by adding the following `.envrc` to the project root:
 
 ```bash
-uv sync --python=$(cat .python-version-default)
+uv sync
 . .venv/bin/activate
 ```
 
@@ -86,7 +86,7 @@ uv sync --python=$(cat .python-version-default)
 When working on the documentation, use:
 
 ```console
-$ tox run -e docs-watch
+$ tox run -e docs-serve
 ```
 
 This will build the documentation, watch for changes, and rebuild it whenever you save a file.
@@ -97,13 +97,7 @@ To just build the documentation and exit immediately use:
 $ tox run -e docs-build
 ```
 
-You will find the built documentation in `docs/_build/html`.
-
-To run doctests:
-
-```console
-$ tox run -e docs-doctests
-```
+You will find the built documentation in `site`.
 
 
 ## Code
@@ -129,12 +123,9 @@ $ tox run -e docs-doctests
       """
   ```
 
-- If you add or change public APIs, tag the docstring using `..  versionadded:: 26.1.0 WHAT` or `..  versionchanged:: 26.1.0 WHAT`.
-  We follow [Calendar Versioning](https://calver.org/), so the next version will be the current with with the middle number incremented (for example, `24.1.0` -> `24.2.0`).
-
 - We use [Ruff](https://ruff.rs/) to sort our imports and format our code with a line length of 79 characters.
   As long as you run our full *tox* suite before committing, you won't have to spend any time on formatting your code at all.
-  If you don't, CI will catch it for you -- but that seems like a waste of everyone's time!
+  If you don't, CI will catch it for you – but that seems like a waste of everyone's time!
 
 
 ## Tests
@@ -196,7 +187,7 @@ If your change is interesting to end-users, there needs to be an entry in our `C
 - Leave an empty line between entries, so it doesn't look like a wall of text.
 
 - Refer to all symbols by their fully-qualified names.
-  For example, `pgbg.Foo` -- not just `Foo`.
+  For example, `pgbg.Foo` – not just `Foo`.
 
 - Wrap symbols like modules, functions, or classes into backticks, so they are rendered in a `monospace font`.
 

@@ -1,7 +1,7 @@
 # `NOTIFY` Dispatch
 
-Modern Postgres has great support for real-time signaling with [`LISTEN`](https://www.postgresql.org/docs/current/sql-listen.html) and [`NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html).
-However, Postgres connections are expensive and external connection pools like [PgBouncer] are finicky with `LISTEN` / `NOTIFY`.
+Modern PostgreSQL has great support for real-time signaling with [`LISTEN`](https://www.postgresql.org/docs/current/sql-listen.html) and [`NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html).
+However, PostgreSQL connections are expensive and external connection pools like [PgBouncer] are finicky with `LISTEN` / `NOTIFY`.
 
 And so the [notifier pattern](https://brandur.org/notifier) emerged, where each process has only *one* connection that listens on **all** channels and dispatches the notifications to its **local** subscribers.
 
@@ -35,7 +35,7 @@ Therefore, subscriptions remain valid across these restarts.
 ## Connection poolers
 
 The dispatcher's `LISTEN` connection is dedicated and lives outside any pool, because transaction-mode poolers such as [PgBouncer] do not support `LISTEN`.
-Point the connection factory *directly* at Postgres, while your application traffic goes through the pooler.
+Point the connection factory *directly* at PostgreSQL, while your application traffic goes through the pooler.
 
 If no direct connection is possible, run your services with an `IntervalOnlyWakeup` and skip the dispatcher entirely.
 Everything works the same, except your services then only wake up on their interval instead of on notifications.

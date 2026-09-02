@@ -3,7 +3,7 @@
 ## Batteries-included
 
 Reach for these first:
-every handle composes the necessary buildings blocks, starts its loop under a supervisor and offers `stop()`, `is_running`, and a context manager.
+every handle composes the necessary building blocks, starts its loop under a supervisor and offers `stop()`, `is_running`, and a context manager.
 
 If you're using SQLAlchemy, have also a look at [our helpers](api-sqlalchemy.md) with even more batteries included.
 

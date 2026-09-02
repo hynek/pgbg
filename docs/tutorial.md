@@ -3,13 +3,16 @@
 ## Installation
 
 *pgbg* is available on [PyPI under the `pgbg` name](https://pypi.org/project/pgbg/).
-We're also going to use the SQLAlchemy integration later, so let's install both:
+We're also going to use the SQLAlchemy integration later, so let's install both[^binary]:
 
 ```console
 $ uv pip install 'pgbg[sqlalchemy]'
 ```
 
 But for the first use case we don't need a database!
+
+[^binary]: Psycopg also needs a binary database driver.
+    You can either make sure your system has a libpq or add `psycopg[binary]` to the `uv pip install`.
 
 
 ## Level 1: Independent background threads
@@ -18,7 +21,7 @@ In its simplest configuration, *pgbg* allows you to start a thread that runs a f
 Since real-world software crashes eventually, *pgbg* is designed around **failure recovery** and does its best to keep everything running, even if your function raises an exception.
 
 So, the following script starts a [`SupervisedService`][pgbg.SupervisedService] (a background thread) and runs for 10 seconds or until you interrupt it.
-It runs a **loop** that calls the `do_work` function every 2 seconds.
+It runs a **loop** that calls the `do_work` function every 2 seconds (ignore the call to `as_work_factory()` for a second).
 A single call of `do_work` is a **work unit** and the process that runs *pgbg* threads is a **worker**.
 
 In this case, there's a 25% chance for the function to crash and a 50% chance to return `True`:
@@ -138,7 +141,7 @@ Otherwise, the new worker has to take over – or the loop exits.
 So far, our background work has only been triggered using a fixed interval timer.
 Let's make it real-time and add `NOTIFY` dispatchers to the workers.
 
-```python title="dispatch.py" hl_lines="15-17 20-23 29-30 33-48"
+```python title="dispatch.py" hl_lines="15-17 20-22 29-30 33-48"
 --8<-- "docs/examples/dispatch.py"
 ```
 
@@ -157,7 +160,7 @@ $ psql -c 'NOTIFY foo; NOTIFY bar;' -h 127.0.0.1 -U pgbg pgbg
 
 !!! note
 
-    *pgbg* ignores `NOTIFY` payloads, since Postgres notification events aren't a reliable communication channel.
+    *pgbg* ignores `NOTIFY` payloads, since PostgreSQL notification events aren't a reliable communication channel.
 
     A notification only pokes workers that look for their work on their own.
 

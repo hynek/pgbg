@@ -1,9 +1,9 @@
-# *pgbg*: Postgres-orchestrated background threads for Python
+# *pgbg*: PostgreSQL-orchestrated background threads for Python
 
-[![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20The%20Docs-black)](https://pgbg.hynek.me)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C06524)](https://github.com/hynek/pgbg/blob/main/LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/pgbg)](https://pypi.org/project/pgbg/)
 [![No AI slop inside.](https://img.shields.io/badge/no-slop-purple)](https://github.com/hynek/pgbg/blob/main/.github/AI_POLICY.md)
+
 
 <!-- --8<-- [start:spiel] -->
 POV: you want a framework-agnostic way to reliably run a plain[^non-async] function or method in the background, repeatedly, but not all the time.
@@ -12,7 +12,7 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
 
 *pgbg* comes to the rescue with:
 
-- A [**`NOTIFY` dispatcher**](https://brandur.org/notifier) that takes **one** database connection per process and dispatches notifications to an arbitrary number of subscribers.
+- A [**`NOTIFY` dispatcher**](https://brandur.org/notifier) that takes **one** database connection per process and wakes up an arbitrary number of subscribers.
 
 - A **supervisor** that runs your code as a *service*: in a loop, in a background thread.
   If your code crashes, the supervisor restarts the loop.
@@ -20,18 +20,19 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
 
   Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
 
-- Postgres-based **leader election with automatic failover**.
+- PostgreSQL-based **leader election with automatic failover**.
   Make sure only one process runs work at a time.
 
 - Framework and platform independence.
 
-Background tasks are **not** a traditional worker queue.
+Background tasks are **not** a traditional worker queue[^but].
 Common use cases include:
 
 - Periodic cleanup duties for expired caches or sessions.
 - Maintenance of eventually consistent read models.
 - Lightweight transactional background tasks with the [outbox pattern](https://en.wikipedia.org/wiki/Inbox_and_outbox_pattern).
-- *Implementing* worker queues _\~ominous foreshadowing\~_.
+
+[^but]: But it's useful for *implementing* worker queues _\~ominous foreshadowing\~_.
 
 ---
 

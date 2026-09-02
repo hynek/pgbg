@@ -22,8 +22,6 @@ You may check boxes that don't apply to your pull request to indicate that there
 - [ ] There's **tests** for all new and changed code.
 - [ ] **New APIs** are added to our typing tests at <https://github.com/hynek/pgbg/blob/main/typing_tests/>.
 - [ ] Updated **documentation** for changed code.
-    - [ ] Changed/added classes/methods/functions have appropriate `versionadded`, `versionchanged`, or `deprecated` [directives](http://www.sphinx-doc.org/en/stable/markup/para.html#directive-versionadded).
-      - The next version is the second number in the current release + 1. The first number represents the current year. So if the current version on PyPI is 26.1.0, the next version is gonna be 26.2.0. If the next version is the first in the new year, it'll be 27.1.0.
 - [ ] Documentation in `.md` files is written using [**semantic newlines**](https://rhodesmill.org/brandon/2012/one-sentence-per-line/).
 - [ ] Changes (and possible deprecations) are documented in the [**changelog**](https://github.com/hynek/pgbg/blob/main/CHANGELOG.md).
 

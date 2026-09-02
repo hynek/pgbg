@@ -1,6 +1,6 @@
 # *pgbg*
 
-*Postgres-orchestrated background threads for Python*
+*PostgreSQL-orchestrated background threads for Python*
 
 ---
 

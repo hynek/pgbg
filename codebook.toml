@@ -1,1 +1,4 @@
-words = ["pgbg"]
+words = [
+    "libpq",
+    "pgbg",
+]

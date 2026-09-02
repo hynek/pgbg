@@ -191,5 +191,5 @@ live
 :   A [`LISTEN`][listen] is live once the current loop run has issued it on its connection.
 
 
-[notify]: https://postgresql.org/docs/current/interactive/sql-notify.html
-[listen]: https://postgresql.org/docs/current/interactive/sql-listen.html
+[notify]: https://www.postgresql.org/docs/current/sql-notify.html
+[listen]: https://www.postgresql.org/docs/current/sql-listen.html

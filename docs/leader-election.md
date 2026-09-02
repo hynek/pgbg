@@ -1,6 +1,6 @@
 # Leader Election
 
-An  [`ElectedService`][pgbg.ElectedService] is a [`Service`](pgbg.Service) whose work units run only while the process holds a leadership lease for that kind of service[^pedant].
+An [`ElectedService`][pgbg.ElectedService] is a [`Service`][pgbg.Service] whose work units run only while the process holds a leadership lease for that kind of service[^pedant].
 
 Use it for work that must not run on every process, such as queue maintenance, cleanups, or projection updates.
 Many processes can run the same service, but a lease row in a caller-supplied table makes sure that only one of them *starts* doing new work.
@@ -78,7 +78,7 @@ That signal means the lease was not kept alive while the work unit ran (renewals
 
 ## Elections
 
-An election is one short transaction against the lease table, and Postgres is the only arbiter.
+An election is one short transaction against the lease table, and PostgreSQL is the only arbiter.
 The worker deletes the service's lease if it has lapsed, then tries to `INSERT` a fresh lease that carries its own worker id and expires one `lease_ttl` later.
 The lease table allows only one lease per service name, so the first `INSERT` after the lease becomes free wins.
 Every later one conflicts, does nothing, and leaves its worker a follower.
