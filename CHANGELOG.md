@@ -18,6 +18,11 @@ The third number identifies emergency releases from older branches.
 
 ## [Unreleased](https://github.com/hynek/pgbg/compare/26.1.0...HEAD)
 
+### Added
+
+- `pgbg.sqlalchemy.init_db()` that takes a SQLAlchemy Engine or Connection.
+  [#1](https://github.com/hynek/pgbg/pull/1)
+
 
 ## [26.1.0](https://github.com/hynek/pgbg/tree/26.1.0) - 2026-09-02
 

@@ -7,3 +7,4 @@
         - start_dispatcher
         - connection_factory_from_engine
         - pooled_connection_factory_from_engine
+        - init_db

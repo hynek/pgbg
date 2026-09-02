@@ -8,8 +8,9 @@ from typing import Any
 
 import psycopg
 
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 
+from . import _tables
 from ._dispatcher import SupervisedDispatcher
 from ._services import SupervisedElectedService
 from .typing import ConnectionProvider, Wakeup, WorkFactory
@@ -17,6 +18,7 @@ from .typing import ConnectionProvider, Wakeup, WorkFactory
 
 __all__ = [
     "connection_factory_from_engine",
+    "init_db",
     "pooled_connection_factory_from_engine",
     "start_dispatcher",
     "start_elected_service",
@@ -139,6 +141,15 @@ def connection_factory_from_engine(
     return connect
 
 
+def _require_psycopg(bind: Engine | Connection) -> None:
+    """
+    Raise a ValueError unless *bind* speaks to the database through Psycopg.
+    """
+    if bind.dialect.driver != "psycopg":
+        msg = f"Expected 'psycopg' dialect, got '{bind.dialect.driver}'"
+        raise ValueError(msg)
+
+
 def pooled_connection_factory_from_engine(
     engine: Engine,
 ) -> ConnectionProvider:
@@ -170,9 +181,7 @@ def pooled_connection_factory_from_engine(
             a connection from *engine*'s pool.
     """
 
-    if engine.dialect.driver != "psycopg":
-        msg = f"Expected 'psycopg' dialect, got '{engine.dialect.driver}'"
-        raise ValueError(msg)
+    _require_psycopg(engine)
 
     @contextmanager
     def provide() -> Iterator[psycopg.Connection[Any]]:
@@ -187,3 +196,46 @@ def pooled_connection_factory_from_engine(
             proxied.close()
 
     return provide
+
+
+def init_db(bind: Engine | Connection, name: str = "pgbg_leases") -> None:
+    """
+    Create the lease table called *name* through SQLAlchemy.
+
+    With an [`Engine`][sqlalchemy.engine.Engine], the table is created and
+    committed in a transaction of its own. With a
+    [`Connection`][sqlalchemy.engine.Connection], it joins the caller's
+    transaction, beginning one if none is in progress, just like a statement
+    executed through SQLAlchemy would, so the caller's commit persists it.
+
+    Either way, the DDL runs on the underlying Psycopg connection through
+    [`pgbg.init_db`][pgbg.init_db].
+
+    Args:
+        bind:
+            The engine or connection to create the table with.
+
+        name:
+            The name of the lease table, optionally schema-qualified with
+            a dot (for example, `"public.pgbg_leases"`).
+
+    Raises:
+        ValueError: If *bind* does not use the Psycopg driver.
+    """
+    _require_psycopg(bind)
+
+    if isinstance(bind, Engine):
+        with bind.begin() as conn:
+            init_db(conn, name)
+
+        return
+
+    # Mirror SQLAlchemy's autobegin: a statement executed on the driver
+    # connection directly would otherwise leave SQLAlchemy unaware of the
+    # transaction, and the caller's commit() would be a no-op.
+    if not bind.in_transaction():
+        bind.begin()
+
+    driver_connection = bind.connection.driver_connection
+    assert driver_connection is not None
+    _tables.init_db(driver_connection, name)
