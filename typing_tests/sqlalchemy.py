@@ -12,6 +12,7 @@ from pgbg import (
 )
 from pgbg.sqlalchemy import (
     connection_factory_from_engine,
+    init_db,
     pooled_connection_factory_from_engine,
     start_dispatcher,
     start_elected_service,
@@ -57,3 +58,10 @@ assert_type(
     ),
     SupervisedElectedService,
 )
+
+init_db(engine)
+init_db(engine, "app.leases")
+
+with engine.begin() as sa_conn:
+    init_db(sa_conn)
+    init_db(sa_conn, "app.leases")

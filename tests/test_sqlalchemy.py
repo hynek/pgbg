@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 from pgbg import IntervalOnlyWakeup, as_work_factory
 from pgbg.sqlalchemy import (
     connection_factory_from_engine,
+    init_db,
     pooled_connection_factory_from_engine,
     start_dispatcher,
     start_elected_service,
@@ -197,5 +198,91 @@ def test_pooled_factory_raises_on_driver_mismatch(pgbg_engine):
     with pytest.raises(ValueError) as exc_info:
         pooled_connection_factory_from_engine(engine)
     assert "Expected 'psycopg'" in str(exc_info.value)
+
+    engine.dispose()
+
+
+@pytest.fixture(name="fresh_sqla_leases")
+def _fresh_sqla_leases(pgbg_engine):
+    """
+    The name of a lease table that is absent before and after the test.
+    """
+
+    def drop():
+        """
+        Drop the table if it exists.
+        """
+        with pgbg_engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS pgbg_sqla_leases"))
+
+    drop()
+
+    yield "pgbg_sqla_leases"
+
+    drop()
+
+
+def regclass(engine, name):
+    """
+    Resolve *name* on a fresh connection, the way another process sees it.
+    """
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT to_regclass(:name)"), {"name": name}
+        ).scalar_one()
+
+
+def test_init_db_from_an_engine_commits_the_table(
+    pgbg_engine, fresh_sqla_leases
+):
+    """
+    init_db() on an Engine creates the lease table in a transaction of its
+    own and commits it, so other connections see it.
+    """
+    init_db(pgbg_engine, fresh_sqla_leases)
+
+    assert fresh_sqla_leases == regclass(pgbg_engine, fresh_sqla_leases)
+
+
+def test_init_db_on_a_connection_joins_the_callers_transaction(
+    pgbg_engine, fresh_sqla_leases
+):
+    """
+    init_db() on a Connection runs inside the caller's transaction.
+    """
+    with pgbg_engine.begin() as conn:
+        init_db(conn, fresh_sqla_leases)
+
+    assert fresh_sqla_leases == regclass(pgbg_engine, fresh_sqla_leases)
+
+
+def test_init_db_on_a_connection_begins_for_the_caller(
+    pgbg_engine, fresh_sqla_leases
+):
+    """
+    init_db() on a Connection with no transaction in progress begins one,
+    like an SQLAlchemy-level statement would, so the caller's commit()
+    persists the table instead of the pool's return-reset rolling it back.
+    """
+    with pgbg_engine.connect() as conn:
+        init_db(conn, fresh_sqla_leases)
+        conn.commit()
+
+    assert fresh_sqla_leases == regclass(pgbg_engine, fresh_sqla_leases)
+
+
+def test_init_db_rejects_a_non_psycopg_dialect(pgbg_engine):
+    """
+    init_db() raises a ValueError for a bind that does not use the Psycopg
+    driver, before touching the database.
+    """
+    engine = create_engine(
+        str(pgbg_engine.url).replace(
+            "postgresql+psycopg://", "postgresql+pg8000://"
+        )
+    )
+
+    with pytest.raises(ValueError, match="Expected 'psycopg'"):
+        init_db(engine)
 
     engine.dispose()
