@@ -16,7 +16,7 @@ The third number identifies emergency releases from older branches.
 <!-- changelog follows -->
 
 
-## [Unreleased](https://github.com/hynek/pgbg/commits/main)
+## [Unreleased](https://github.com/hynek/pgbg/)
 
 ### Added
 
