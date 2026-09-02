@@ -4,7 +4,7 @@
 
 We currently only support the latest version.
 
-Until the package is pronounced stable, there are no backwards-compatability guarantees.
+Until the package is pronounced stable, there are no backwards-compatibility guarantees.
 The code has been in production for years, but we want some leeway to adjust APIs in the early days.
 
 
