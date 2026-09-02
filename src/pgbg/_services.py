@@ -21,6 +21,7 @@ import structlog
 from prometheus_client import Counter, Gauge
 
 from ._supervisor import Supervisor
+from ._tables import leases_identifier
 from .exceptions import SuppressedCrashError
 from .typing import ConnectionProvider, DoWork, Wakeup, WorkFactory
 
@@ -971,10 +972,6 @@ class ElectedService:
             msg = "worker_id must not be empty"
             raise ValueError(msg)
 
-        if not leases or not all(leases.split(".")):
-            msg = "leases must be a table name without empty parts"
-            raise ValueError(msg)
-
         if lease_ttl is None:
             lease_ttl = interval + _DEFAULT_LEASE_TTL_GRACE
         if lease_ttl <= 0 or not math.isfinite(lease_ttl):
@@ -988,7 +985,7 @@ class ElectedService:
                 worker_id,
                 lease_ttl,
                 get_connection=get_connection,
-                leases=psycopg.sql.Identifier(*leases.split(".")),
+                leases=leases_identifier(leases),
             ),
             wakeup=wakeup,
             work_factory=work_factory,

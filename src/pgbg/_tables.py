@@ -12,37 +12,30 @@ import psycopg
 from psycopg import sql
 
 
-def _leases_table(name: str, schema: str | None) -> sql.Identifier:
+def leases_identifier(name: str) -> sql.Identifier:
     """
-    Build the (optionally schema-qualified) table identifier.
+    Build the quoted identifier for the lease-table *name*.
+
+    *name* is optionally schema-qualified with a dot (for example,
+    `"public.pgbg_leases"`).
     """
-    if not name:
-        msg = "name must not be empty"
+    if not name or not all(name.split(".")):
+        msg = "the lease-table name must not be empty or have empty parts"
         raise ValueError(msg)
 
-    if "." in name:
-        msg = "name must not contain dots; pass a schema instead"
-        raise ValueError(msg)
-
-    if schema == "":
-        msg = "schema must not be empty"
-        raise ValueError(msg)
-
-    if schema is None:
-        return sql.Identifier(name)
-
-    return sql.Identifier(schema, name)
+    return sql.Identifier(*name.split("."))
 
 
-def make_create_leases_table_sql(
-    name: str = "pgbg_leases", schema: str | None = None
-) -> sql.Composed:
+def make_create_leases_table_sql(name: str = "pgbg_leases") -> sql.Composed:
     """
-    Return the CREATE TABLE statement for a lease table.
+    Return the `CREATE TABLE` statement for a lease table called *name*.
 
-    The table is UNLOGGED because a lease is worthless after a server restart
-    anyway.
+    *name* is optionally schema-qualified with a dot (for example,
+    `"public.pgbg_leases"`).
     """
+    table = name.rsplit(".", 1)[-1]
+
+    # UNLOGGED is fine b/c a lease is worthless after a server restart anyway.
     return sql.SQL("""\
 CREATE UNLOGGED TABLE IF NOT EXISTS {} (
     elected_at timestamptz NOT NULL,
@@ -53,31 +46,22 @@ CREATE UNLOGGED TABLE IF NOT EXISTS {} (
     CONSTRAINT {} CHECK (worker_id != '')
 )
 """).format(
-        _leases_table(name, schema),
-        sql.Identifier(f"{name}_name_not_empty"),
-        sql.Identifier(f"{name}_worker_id_not_empty"),
+        leases_identifier(name),
+        sql.Identifier(f"{table}_name_not_empty"),
+        sql.Identifier(f"{table}_worker_id_not_empty"),
     )
 
 
-def init_db(
-    conn: psycopg.Connection[Any],
-    *,
-    name: str = "pgbg_leases",
-    schema: str | None = None,
-) -> None:
+def init_db(conn: psycopg.Connection[Any], name: str = "pgbg_leases") -> None:
     """
-    Create the lease table if it doesn't exist.
+    Create the lease table called *name* if it doesn't exist.
 
     Args:
         conn:
             A psycopg connection.
 
         name:
-            The name of the lease table.
-
-        schema:
-            The PostgreSQL schema in which to create the table. If
-            `None`, the table is created in the connection's current
-            default schema.
+            The name of the lease table, optionally schema-qualified with
+            a dot (for example, `"public.pgbg_leases"`).
     """
-    conn.execute(make_create_leases_table_sql(name=name, schema=schema))
+    conn.execute(make_create_leases_table_sql(name))

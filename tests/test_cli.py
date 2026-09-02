@@ -52,7 +52,7 @@ class TestInitDB:
 
     def test_creates_table_in_schema(self, pgbg_dsn):
         """
-        `init-db --schema` creates the lease table in that schema.
+        A schema-qualified `--name` creates the lease table in that schema.
         """
         schema = "pgbg_cli_test"
 
@@ -60,7 +60,9 @@ class TestInitDB:
             conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
             conn.execute(f"CREATE SCHEMA {schema}")
 
-        assert 0 == main(["init-db", "--schema", schema, pgbg_dsn])
+        assert 0 == main(
+            ["init-db", "--name", f"{schema}.pgbg_leases", pgbg_dsn]
+        )
 
         with psycopg.connect(pgbg_dsn, autocommit=True) as conn:
             regclass = conn.execute(
@@ -83,10 +85,10 @@ class TestInitDB:
 
     def test_without_dsn_prints_named_schema_sql(self, capsys):
         """
-        `init-db --name --schema` prints qualified SQL if no DSN is
-        passed, with the constraint names following the table name.
+        A schema-qualified `--name` prints qualified SQL if no DSN is
+        passed, with the constraint names following the table part alone.
         """
-        assert 0 == main(["init-db", "--name", "leases", "--schema", "app"])
+        assert 0 == main(["init-db", "--name", "app.leases"])
 
         out = capsys.readouterr().out
 
@@ -108,23 +110,16 @@ class TestInitDB:
         """
         assert 1 == main(["init-db", "--name", "", pgbg_dsn])
 
-        assert "name must not be empty" in capsys.readouterr().err
+        assert "empty parts" in capsys.readouterr().err
 
-    def test_reports_dotted_name(self, pgbg_dsn, capsys):
+    def test_reports_empty_name_part(self, pgbg_dsn, capsys):
         """
-        A dotted table name is rejected in favor of --schema.
+        A qualified name with an empty part is reported on stderr and exits
+        non-zero.
         """
-        assert 1 == main(["init-db", "--name", "public.leases", pgbg_dsn])
+        assert 1 == main(["init-db", "--name", "public..leases", pgbg_dsn])
 
-        assert "must not contain dots" in capsys.readouterr().err
-
-    def test_reports_empty_schema(self, pgbg_dsn, capsys):
-        """
-        An empty schema name is reported on stderr and exits non-zero.
-        """
-        assert 1 == main(["init-db", "--schema", "", pgbg_dsn])
-
-        assert "schema must not be empty" in capsys.readouterr().err
+        assert "empty parts" in capsys.readouterr().err
 
 
 def test_requires_a_command():

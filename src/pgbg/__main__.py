@@ -12,27 +12,25 @@ import psycopg
 from ._tables import init_db, make_create_leases_table_sql
 
 
-def _dump_init_db_sql(name: str, schema: str | None = None) -> None:
+def _dump_init_db_sql(name: str) -> None:
     """
     Print the leases-table DDL to stdout.
     """
-    statement = make_create_leases_table_sql(name=name, schema=schema)
+    statement = make_create_leases_table_sql(name)
     print(f"{statement.as_string().rstrip()};")
 
 
-def _do_init_db(
-    dsn: str | None, *, name: str, schema: str | None = None
-) -> int:
+def _do_init_db(dsn: str | None, name: str) -> int:
     """
     Create the lease table, or print its SQL if *dsn* is None.
     """
     try:
         if dsn is None:
-            _dump_init_db_sql(name, schema)
+            _dump_init_db_sql(name)
             return 0
 
         with psycopg.connect(dsn, autocommit=True) as conn:
-            init_db(conn, name=name, schema=schema)
+            init_db(conn, name)
     except (ValueError, psycopg.Error) as e:
         print(f"pgbg: init-db failed: {e}", file=sys.stderr)
         return 1
@@ -60,11 +58,8 @@ def _build_parser() -> argparse.ArgumentParser:
     init_db_parser.add_argument(
         "--name",
         default="pgbg_leases",
-        help="Name of the lease table to create.",
-    )
-    init_db_parser.add_argument(
-        "--schema",
-        help="PostgreSQL schema in which to create the lease table.",
+        help="Name of the lease table to create, optionally "
+        "schema-qualified with a dot, e.g. public.pgbg_leases.",
     )
     init_db_parser.add_argument(
         "dsn",
@@ -84,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    return _do_init_db(args.dsn, name=args.name, schema=args.schema)
+    return _do_init_db(args.dsn, args.name)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -202,10 +202,8 @@ with SupervisedElectedService.start(
     assert_type(elected_handle, SupervisedElectedService)
 
 assert_type(make_create_leases_table_sql(), sql.Composed)
-assert_type(
-    make_create_leases_table_sql(name="leases", schema="app"), sql.Composed
-)
+assert_type(make_create_leases_table_sql("app.leases"), sql.Composed)
 
 with lend() as ddl_conn:
     init_db(ddl_conn)
-    init_db(ddl_conn, name="leases", schema="app")
+    init_db(ddl_conn, "app.leases")
