@@ -16,7 +16,7 @@ POV: you want a framework-agnostic way to reliably run a plain[^non-async] funct
 
 - A **supervisor** that runs your code as a *service*: in a loop, in a background thread.
   If your code crashes, the supervisor restarts the loop.
-  Write [crash-only](https://pgbg.hynek.me/latest/glossary/#crash-only) code, *pgbg* takes care of the rest.
+  Write [crash-only](https://pgbg.hynek.me/stable/glossary/#crash-only) code, *pgbg* takes care of the rest.
 
     Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
 
@@ -41,7 +41,7 @@ The core needs and supports only [Psycopg 3](https://www.psycopg.org/psycopg3/do
 
 <!-- --8<-- [end:spiel] -->
 
-Check out our [step-by-step tutorial](https://pgbg.hynek.me/latest/tutorial/) to get an instant feel for the features!
+Check out our [step-by-step tutorial](https://pgbg.hynek.me/stable/tutorial/) to get an instant feel for the features!
 
 
 ## Installation
