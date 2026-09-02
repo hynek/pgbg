@@ -1,6 +1,6 @@
 # *pgbg*: PostgreSQL-orchestrated background threads for Python
 
-[![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20The%20Docs-black)](https://pgbg.hynek.me)
+[![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20Them!-black)](https://pgbg.hynek.me)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C06524)](https://github.com/hynek/pgbg/blob/main/LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/pgbg)](https://pypi.org/project/pgbg/)
 [![No AI slop inside.](https://img.shields.io/badge/no-slop-purple)](https://github.com/hynek/pgbg/blob/main/.github/AI_POLICY.md)
