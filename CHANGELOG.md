@@ -24,6 +24,12 @@ The third number identifies emergency releases from older branches.
   [#1](https://github.com/hynek/pgbg/pull/1)
 
 
+### Changed
+
+- The `service.notified` log event is now called `service.woken`.
+  It fires on any wakeup, not only on notifications.
+
+
 ## [26.1.0](https://github.com/hynek/pgbg/tree/26.1.0) - 2026-09-02
 
 ### Added

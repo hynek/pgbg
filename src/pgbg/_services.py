@@ -769,7 +769,7 @@ class Service:
         Wait for a wakeup, falling back to the interval timeout.
         """
         if self._wakeup.wait(self._interval):
-            logger.debug("service.notified", name=self._name)
+            logger.debug("service.woken", name=self._name)
 
     def _run_once(self, do_work: DoWork, stop: threading.Event) -> None:
         """
@@ -1066,7 +1066,7 @@ class ElectedService:
         """
         if self._wakeup.wait(self._interval):
             logger.debug(
-                "service.notified",
+                "service.woken",
                 name=self._term.name,
             )
 

@@ -945,7 +945,7 @@ class TestServiceLoopLifecycle:
         with structlog.testing.capture_logs() as logs:
             service._wait_for_wakeup()
 
-        assert "service.notified" in [entry["event"] for entry in logs]
+        assert "service.woken" in [entry["event"] for entry in logs]
 
     def test_wait_for_wakeup_times_out_without_a_wake(self, build_service):
         """
@@ -958,7 +958,7 @@ class TestServiceLoopLifecycle:
         with structlog.testing.capture_logs() as logs:
             service._wait_for_wakeup()
 
-        assert "service.notified" not in [entry["event"] for entry in logs]
+        assert "service.woken" not in [entry["event"] for entry in logs]
 
     def test_interval_only_wakeup_ends_the_wait_when_woken(
         self, build_service
@@ -1808,7 +1808,7 @@ class TestService:
         with structlog.testing.capture_logs() as logs:
             service._wait_for_wakeup()
 
-        assert ["service.notified"] == [entry["event"] for entry in logs]
+        assert ["service.woken"] == [entry["event"] for entry in logs]
 
     def test_service_wakes_on_a_real_notification(
         self, running_dispatcher, pgbg_dsn
