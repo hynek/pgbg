@@ -1,6 +1,8 @@
+<!-- --8<-- [start:header] -->
 # *pgbg*
 
 *PostgreSQL-orchestrated background threads for Python*
+<!-- --8<-- [end:header] -->
 
 [![Documentation at ReadTheDocs](https://img.shields.io/badge/Docs-Read%20Them!-black)](https://pgbg.hynek.me)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C06524)](https://github.com/hynek/pgbg/blob/main/LICENSE)
