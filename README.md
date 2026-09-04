@@ -41,6 +41,8 @@ Common use cases include:
 
 The core needs and supports only [Psycopg 3](https://www.psycopg.org/psycopg3/docs/) for database access.
 *pgbg* comes with optional support for [SQLAlchemy](https://www.sqlalchemy.org) in the `pgbg.sqlalchemy` module that connects everything to a SQLAlchemy `Engine`.
+If you use [*psycopg-pool*](https://www.psycopg.org/psycopg3/docs/api/pool.html), you don't need an adapter at all:
+pass your pool's `connection` method wherever *pgbg* asks for a connection provider.
 
 <!-- --8<-- [end:spiel] -->
 
@@ -50,7 +52,10 @@ Check out our [step-by-step tutorial](https://pgbg.hynek.me/stable/tutorial/) to
 ## Installation
 
 The package is available on [PyPI under the `pgbg` name](https://pypi.org/project/pgbg/).
-It comes with an optional extra `sqlalchemy` (`uv pip install 'pgbg[sqlalchemy]'`), but that currently only adds a `SQLAlchemy>2` lower pin.
+It comes with two optional extras:
+
+- `sqlalchemy` (`uv pip install 'pgbg[sqlalchemy]'`) currently only adds a `SQLAlchemy>2` lower pin.
+- `pool` (`uv pip install 'pgbg[pool]'`) installs [*psycopg-pool*](https://www.psycopg.org/psycopg3/docs/api/pool.html).
 
 
 ## Documentation

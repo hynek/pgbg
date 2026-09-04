@@ -45,6 +45,7 @@ keywords = [
 
 [project.optional-dependencies]
 sqlalchemy = ["sqlalchemy>=2"]
+pool = ["psycopg-pool"]
 
 [project.urls]
 Changelog = "https://github.com/hynek/pgbg/blob/main/CHANGELOG.md"
@@ -76,7 +77,11 @@ sqlalchemy-tests = [
     "pg8000",
     "sqlalchemy>=2",
 ]
+pool-tests = [
+    "psycopg-pool",
+]
 typing = [
+    "psycopg-pool",
     "sqlalchemy>=2",
 ]
 mypy = [
@@ -106,6 +111,7 @@ tox = [
 dev = [
     { include-group = "cov" },
     { include-group = "sqlalchemy-tests" },
+    { include-group = "pool-tests" },
     { include-group = "mypy" },
     { include-group = "pyright" },
     { include-group = "ty" },

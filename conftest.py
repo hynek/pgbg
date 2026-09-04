@@ -19,6 +19,9 @@ collect_ignore = []
 if not find_spec("sqlalchemy"):
     collect_ignore.append("tests/test_sqlalchemy.py")
 
+if not find_spec("psycopg_pool"):
+    collect_ignore.append("tests/test_psycopg_pool.py")
+
 _POSTGRES_DSN = "postgresql://postgres@127.0.0.1/postgres"
 _PGBG_DSN = "postgresql://pgbg@127.0.0.1/pgbg"
 

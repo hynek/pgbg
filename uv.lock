@@ -724,6 +724,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+pool = [
+    { name = "psycopg-pool" },
+]
 sqlalchemy = [
     { name = "sqlalchemy" },
 ]
@@ -738,6 +741,7 @@ dev = [
     { name = "mypy" },
     { name = "pg8000" },
     { name = "prek" },
+    { name = "psycopg-pool" },
     { name = "pyrefly" },
     { name = "pyright" },
     { name = "pytest" },
@@ -757,13 +761,19 @@ lint = [
 ]
 mypy = [
     { name = "mypy" },
+    { name = "psycopg-pool" },
     { name = "sqlalchemy" },
 ]
+pool-tests = [
+    { name = "psycopg-pool" },
+]
 pyrefly = [
+    { name = "psycopg-pool" },
     { name = "pyrefly" },
     { name = "sqlalchemy" },
 ]
 pyright = [
+    { name = "psycopg-pool" },
     { name = "pyright" },
     { name = "sqlalchemy" },
 ]
@@ -779,10 +789,12 @@ tox = [
     { name = "tox-uv-bare" },
 ]
 ty = [
+    { name = "psycopg-pool" },
     { name = "sqlalchemy" },
     { name = "ty" },
 ]
 typing = [
+    { name = "psycopg-pool" },
     { name = "sqlalchemy" },
 ]
 
@@ -791,10 +803,11 @@ requires-dist = [
     { name = "attrs" },
     { name = "prometheus-client" },
     { name = "psycopg", specifier = ">=3.2.10" },
+    { name = "psycopg-pool", marker = "extra == 'pool'" },
     { name = "sqlalchemy", marker = "extra == 'sqlalchemy'", specifier = ">=2" },
     { name = "structlog", specifier = ">=25.3.0" },
 ]
-provides-extras = ["sqlalchemy"]
+provides-extras = ["pool", "sqlalchemy"]
 
 [package.metadata.requires-dev]
 cov = [
@@ -806,6 +819,7 @@ dev = [
     { name = "mypy" },
     { name = "pg8000" },
     { name = "prek" },
+    { name = "psycopg-pool" },
     { name = "pyrefly" },
     { name = "pyright" },
     { name = "pytest", specifier = ">=9" },
@@ -825,13 +839,17 @@ lint = [
 ]
 mypy = [
     { name = "mypy" },
+    { name = "psycopg-pool" },
     { name = "sqlalchemy", specifier = ">=2" },
 ]
+pool-tests = [{ name = "psycopg-pool" }]
 pyrefly = [
+    { name = "psycopg-pool" },
     { name = "pyrefly" },
     { name = "sqlalchemy", specifier = ">=2" },
 ]
 pyright = [
+    { name = "psycopg-pool" },
     { name = "pyright" },
     { name = "sqlalchemy", specifier = ">=2" },
 ]
@@ -845,10 +863,14 @@ tox = [
     { name = "tox-uv-bare" },
 ]
 ty = [
+    { name = "psycopg-pool" },
     { name = "sqlalchemy", specifier = ">=2" },
     { name = "ty", specifier = ">=0.0.21" },
 ]
-typing = [{ name = "sqlalchemy", specifier = ">=2" }]
+typing = [
+    { name = "psycopg-pool" },
+    { name = "sqlalchemy", specifier = ">=2" },
+]
 
 [[package]]
 name = "platformdirs"
@@ -912,6 +934,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/db/2f/cb91e5502ec9de1de6f1b76cfbf69531932725361168bb06963620c77e2e/psycopg-3.3.4.tar.gz", hash = "sha256:e21207764952cff81b6b8bdacad9a3939f2793367fdac2987b3aac36a651b5bc", size = 165799, upload-time = "2026-05-01T23:31:55.179Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/e0/7b3dee031daae7743609ce3c746565d4a3ed7c2c186479eb48e34e838c64/psycopg-3.3.4-py3-none-any.whl", hash = "sha256:b6bbc25ccf05c8fad3b061d9db2ef0909a555171b84b07f29458a447253d679a", size = 213001, upload-time = "2026-05-01T23:20:50.816Z" },
+]
+
+[[package]]
+name = "psycopg-pool"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/82/7a23d26039827ecd4ebe93905651029ddd307c5182ad59296dfb6f67b528/psycopg_pool-3.3.1.tar.gz", hash = "sha256:b10b10b7a175d5cc1592147dc5b7eec8a9e0834eb3ed2c4a92c858e2f51eb63c", size = 31661, upload-time = "2026-05-01T23:31:59.809Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/ed/89c2c620af0e1660354cd8aabf9f5b21f911597ce22acb37c805d6c86bc8/psycopg_pool-3.3.1-py3-none-any.whl", hash = "sha256:2af5b432941c4c9ad5c87b3fa410aec910ec8f7c122855897983a06c45f2e4b5", size = 40023, upload-time = "2026-05-01T23:31:53.136Z" },
 ]
 
 [[package]]

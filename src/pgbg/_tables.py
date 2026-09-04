@@ -56,6 +56,18 @@ def init_db(conn: psycopg.Connection[Any], name: str = "pgbg_leases") -> None:
     """
     Create the lease table called *name* if it doesn't exist.
 
+    The DDL follows *conn*'s transaction handling: with autocommit on, the
+    table exists at once, otherwise once the caller commits.
+
+    A connection borrowed from a
+    [`psycopg_pool.ConnectionPool`][psycopg_pool.ConnectionPool] commits
+    when its checkout ends, so this is all it takes:
+
+    ```python
+    with pool.connection() as conn:
+        init_db(conn)
+    ```
+
     Args:
         conn:
             A psycopg connection.
