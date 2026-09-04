@@ -3,9 +3,9 @@ import time
 
 import structlog
 
+from bgt import as_work_factory
 from sqlalchemy import Engine, create_engine
 
-from pgbg import as_work_factory
 from pgbg.sqlalchemy import start_dispatcher, start_elected_service
 
 

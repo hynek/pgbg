@@ -1,5 +1,5 @@
 """
-Background service threads, with and without leader election.
+Leader-elected background service threads.
 """
 
 import math
@@ -7,7 +7,7 @@ import threading
 import time
 
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from datetime import datetime
 from types import TracebackType
 from typing import Any, Self
@@ -18,12 +18,13 @@ import psycopg.errors
 import psycopg.sql
 import structlog
 
+from bgt import Supervisor
+from bgt.exceptions import SuppressedCrashError
+from bgt.typing import DoWork, Wakeup, WorkFactory
 from prometheus_client import Counter, Gauge
 
-from ._supervisor import Supervisor
 from ._tables import leases_identifier
-from .exceptions import SuppressedCrashError
-from .typing import ConnectionProvider, DoWork, Wakeup, WorkFactory
+from .typing import ConnectionProvider
 
 
 logger = structlog.stdlib.get_logger("pgbg")
@@ -564,314 +565,10 @@ class LeaderTerm:
             )
 
 
-def _make_set_event() -> threading.Event:
-    """
-    Return an already-set event: an `IntervalOnlyWakeup` starts "woken".
-    """
-    event = threading.Event()
-    event.set()
-
-    return event
-
-
-@attrs.define
-class IntervalOnlyWakeup:
-    """
-    The wakeup a service uses with no dispatcher.
-
-    It starts woken, so a service's first work unit runs at startup, just like
-    [`Subscription`][pgbg.Subscription]s get woken after their `LISTEN` goes
-    live.
-
-    After that, it has no external notification source, so
-    [`wait()`][pgbg.IntervalOnlyWakeup.wait] only ever times out and the
-    [`Service`][pgbg.Service] polls on its own `interval`.
-
-    [`wake()`][pgbg.IntervalOnlyWakeup.wake] ends the wait instantly.
-    """
-
-    _woken: threading.Event = attrs.field(init=False, factory=_make_set_event)
-
-    def wait(self, timeout: float) -> bool:
-        """
-        Block up to *timeout* seconds.
-
-        Args:
-            timeout: Maximum time to wait for a wakeup.
-
-        Return `True` when woken and `False` on a timeout.
-        """
-        if self._woken.wait(timeout):
-            # The wake is consumed here, so the next `wait` blocks again.
-            # Edge-triggered, like `Subscription.wait`, rather than staying
-            # woken forever.
-            self._woken.clear()
-            return True
-
-        return False
-
-    def wake(self) -> None:
-        """
-        End the current wait and let the loop re-check its stop event.
-        """
-        self._woken.set()
-
-    def close(self) -> None:
-        """
-        Release nothing: there is no subscription behind this wakeup.
-        """
-
-
-def as_work_factory(do_work: DoWork) -> WorkFactory:
-    """
-    Wrap a plain *do_work* callable into a
-    [`WorkFactory`][pgbg.typing.WorkFactory] with no setup or cleanup.
-
-    Args:
-        do_work: A callable that performs one bounded work unit.
-
-    Returns:
-        A factory that creates a context manager returning *do_work*.
-    """
-    return lambda: nullcontext(do_work)
-
-
-@attrs.define
-class Service:
-    """
-    Loop for a per-process background service.
-
-    Every process runs its own work units and waits on
-    a [`Wakeup`][pgbg.typing.Wakeup] between loop cycles.
-
-    Users must create it using [`build()`][pgbg.Service.build].
-    """
-
-    _interval: float = attrs.field(alias="interval")
-    _name: str = attrs.field(alias="name")
-    _wakeup: Wakeup = attrs.field(alias="wakeup")
-    _work_factory: WorkFactory = attrs.field(alias="work_factory")
-    has_completed_cycle: bool = attrs.field(init=False, default=False)
-
-    @classmethod
-    def build(
-        cls,
-        work_factory: WorkFactory,
-        *,
-        name: str,
-        wakeup: Wakeup,
-        interval: float = 1.0,
-    ) -> Self:
-        """
-        Validate arguments and build a service, ready to be supervised.
-
-        Hand the result to [`Supervisor.start()`][pgbg.Supervisor.start], to
-        run it supervised in a background thread.
-
-        Args:
-            work_factory:
-                See [`WorkFactory`][pgbg.typing.WorkFactory] and
-                [Services](services.md).
-
-            name:
-                Names the service in logs and metrics. Must not be empty.
-
-            wakeup:
-                Ends the wait between loop cycles. See
-                [`Wakeup`][pgbg.typing.Wakeup].
-                A [`Subscription`][pgbg.Subscription] provides
-                notification-driven wakeups. An
-                [`IntervalOnlyWakeup`][pgbg.IntervalOnlyWakeup] polls on
-                *interval* alone.
-
-                !!! warning
-                    Do not share this wakeup with another consumer. The service
-                    takes exclusive ownership and closes it when supervision
-                    ends.
-
-            interval:
-                Maximum seconds to wait for a wakeup. The service runs again
-                (performs a *loop cycle*) when this interval expires. Must be
-                greater than zero.
-
-        Raises:
-            ValueError:
-                If *interval* or *name* are invalid.
-        """
-        if interval <= 0 or not math.isfinite(interval):
-            msg = "interval must be > 0"
-            raise ValueError(msg)
-
-        if not name:
-            msg = "name must not be empty"
-            raise ValueError(msg)
-
-        return cls(
-            interval=interval,
-            name=name,
-            wakeup=wakeup,
-            work_factory=work_factory,
-        )
-
-    def run(self, stop: threading.Event) -> None:
-        """
-        Wait for wakeups and work until *stop* is set.
-
-        Enters the work factory first: it creates the loop run's `do_work`, and
-        its cleanup runs when the loop run ends, crash or not.
-
-        Any failure propagates and a clean return means *stop* was set.
-        A factory that suppresses the loop run's crash raises
-        [`SuppressedCrashError`][pgbg.exceptions.SuppressedCrashError] instead.
-
-        Args:
-            stop:
-                The event the loop exits on.
-        """
-        self.has_completed_cycle = False
-        # Create the series at 0 without clobbering an earlier stamp.
-        SERVICE_LAST_WORK_UNIT.labels(name=self._name)
-        log = logger.bind(func="service", name=self._name)
-        log.info("service.started")
-
-        with self._work_factory() as do_work:
-            while not stop.is_set():
-                # Each loop cycle waits first. The startup work unit is
-                # triggered by the wakeup's initial wake like `Subscription`'s
-                # LISTEN going live, or `IntervalOnlyWakeup` starting woken.
-                self._wait_for_wakeup()
-                if stop.is_set():
-                    break
-
-                self._run_once(do_work, stop)
-                self.has_completed_cycle = True
-
-        if not stop.is_set():
-            msg = "the work factory suppressed the loop run's crash"
-            raise SuppressedCrashError(msg)
-
-        log.info("service.stopped")
-
-    def wake(self) -> None:
-        """
-        Wake the loop out of its wait so a set stop takes effect promptly.
-        """
-        self._wakeup.wake()
-
-    def close(self) -> None:
-        """
-        Release the wakeup.
-        """
-        self._wakeup.close()
-
-    def _wait_for_wakeup(self) -> None:
-        """
-        Wait for a wakeup, falling back to the interval timeout.
-        """
-        if self._wakeup.wait(self._interval):
-            logger.debug("service.woken", name=self._name)
-
-    def _run_once(self, do_work: DoWork, stop: threading.Event) -> None:
-        """
-        Run the work units of one loop cycle.
-        """
-        while True:
-            again = do_work()
-            self.has_completed_cycle = True
-
-            SERVICE_LAST_WORK_UNIT.labels(
-                name=self._name
-            ).set_to_current_time()
-
-            if not again or stop.is_set():
-                return
-
-
-@attrs.frozen
-class SupervisedService:
-    """
-    Handle for a service that runs under supervision.
-
-    Construct via [`start()`][pgbg.SupervisedService.start].
-
-    !!! info "See also"
-        [Supervised Service Loops](services.md)
-    """
-
-    _service: Service = attrs.field(alias="service")
-    _supervisor: Supervisor = attrs.field(alias="supervisor")
-
-    @classmethod
-    def start(
-        cls,
-        work_factory: WorkFactory,
-        *,
-        name: str,
-        wakeup: Wakeup,
-        interval: float = 1.0,
-        initial_backoff: float = 0.1,
-    ) -> Self:
-        """
-        Build a service for *work_factory* and start running it under a
-        [`Supervisor`][pgbg.Supervisor].
-
-        *name* names the service, the supervisor, its thread, and the restart
-        metric's label.
-
-        See [`Service.build()`][pgbg.Service.build] for the service arguments and
-        [`Supervisor.start()`][pgbg.Supervisor.start] for *initial_backoff*.
-        """
-        service = Service.build(
-            work_factory,
-            name=name,
-            wakeup=wakeup,
-            interval=interval,
-        )
-
-        return cls(
-            service=service,
-            supervisor=Supervisor.start(
-                service, name=name, initial_backoff=initial_backoff
-            ),
-        )
-
-    @property
-    def is_running(self) -> bool:
-        """
-        Return whether the supervising thread is still alive.
-        """
-        return self._supervisor.is_running
-
-    def stop(self, timeout: float | None = None) -> bool:
-        """
-        Stop the supervision and the service loop.
-
-        See [`Supervisor.stop()`][pgbg.Supervisor.stop].
-        """
-        return self._supervisor.stop(timeout)
-
-    def __enter__(self) -> Self:
-        """
-        Return the running service itself.
-        """
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        """
-        Stop on exit, whether or not the body raised.
-        """
-        self.stop()
-
-
 @attrs.define
 class ElectedService:
     """
-    A [`Service`][pgbg.Service] plus a lease: its work units run only while
+    A [`Service`][bgt.Service] plus a lease: its work units run only while
     this process holds leadership for the service name.
 
     Leaders are elected through a caller-supplied lease table and the other
@@ -887,9 +584,9 @@ class ElectedService:
     process is healthy. `lease_ttl` therefore sizes failover time after
     a crash, not the work-unit budget.
 
-    Between wakeups it waits on a [`Wakeup`][pgbg.typing.Wakeup].
+    Between wakeups it waits on a [`Wakeup`][bgt.typing.Wakeup].
     [`Subscription`][pgbg.Subscription] provides prompt notification-driven
-    wakeups. [`IntervalOnlyWakeup`][pgbg.IntervalOnlyWakeup] polls on
+    wakeups. [`IntervalOnlyWakeup`][bgt.IntervalOnlyWakeup] polls on
     *interval* alone.
 
     !!! warning
@@ -926,15 +623,15 @@ class ElectedService:
         """
         Validate arguments and build a service, ready to be supervised.
 
-        Hand the result to [`Supervisor.start()`][pgbg.Supervisor.start], which
+        Hand the result to [`Supervisor.start()`][bgt.Supervisor.start], which
         owns the thread, its restarts, and the backoff.
 
-        Takes the same arguments as [`Service.build()`][pgbg.Service.build],
+        Takes the same arguments as [`Service.build()`][bgt.Service.build],
         plus the following election-related arguments:
 
         Args:
             name:
-                Like in [`Service`][pgbg.Service], but additionally also names
+                Like in [`Service`][bgt.Service], but additionally also names
                 the leadership lease row.
 
             get_connection:
@@ -1007,7 +704,7 @@ class ElectedService:
 
         Any failure propagates and a clean return means *stop* was set.
         A factory that suppresses the loop run's crash raises
-        [`SuppressedCrashError`][pgbg.exceptions.SuppressedCrashError] instead.
+        [`SuppressedCrashError`][bgt.exceptions.SuppressedCrashError] instead.
 
         A keeper thread renews the lease for as long as this loop run lives
         in the background and dies with it.
@@ -1144,13 +841,13 @@ class SupervisedElectedService:
     ) -> Self:
         """
         Build an elected service and start running it under a
-        [`Supervisor`][pgbg.Supervisor].
+        [`Supervisor`][bgt.Supervisor].
 
         *name* names the lease row, the supervisor, its thread, and the restart
         metric's label alike, and the returned handle is all you need.
 
         See [`ElectedService.build()`][pgbg.ElectedService.build] for the
-        service arguments and [`Supervisor.start()`][pgbg.Supervisor.start]
+        service arguments and [`Supervisor.start()`][bgt.Supervisor.start]
         for *initial_backoff*.
         """
         service = ElectedService.build(
@@ -1191,7 +888,7 @@ class SupervisedElectedService:
         """
         Stop the supervision and the service loop.
 
-        See [`Supervisor.stop()`][pgbg.Supervisor.stop].
+        See [`Supervisor.stop()`][bgt.Supervisor.stop].
         """
         return self._supervisor.stop(timeout)
 

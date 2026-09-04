@@ -10,28 +10,23 @@ If you're using SQLAlchemy, have also a look at [our helpers](api-sqlalchemy.md)
 ::: pgbg
     options:
       members:
-        - SupervisedService
         - SupervisedElectedService
         - SupervisedDispatcher
         - Subscription
-        - IntervalOnlyWakeup
-        - as_work_factory
 
 
 ## Escape hatches
 
-You do not have to use *pgbg*'s supervision:
-[`Service`][pgbg.Service], [`ElectedService`][pgbg.ElectedService], and [`NotifyDispatcher`][pgbg.NotifyDispatcher] are plain blocking loops that you can run on a thread you own, for example your main thread, under a process supervisor.
+You do not have to use *bgt*'s supervision:
+[`ElectedService`][pgbg.ElectedService] and [`NotifyDispatcher`][pgbg.NotifyDispatcher] are plain blocking loops that you can run on a thread you own, for example your main thread, under a process supervisor.
 
-You can also implement a [`Loop`][pgbg.typing.Loop] of your own.
+You can also implement a [`Loop`][bgt.typing.Loop] of your own.
 
 ::: pgbg
     options:
       members:
-        - Service
         - ElectedService
         - NotifyDispatcher
-        - Supervisor
 
 
 ## Database bootstrap
@@ -41,11 +36,3 @@ You can also implement a [`Loop`][pgbg.typing.Loop] of your own.
       members:
         - init_db
         - make_create_leases_table_sql
-
-
-## Exceptions
-
-::: pgbg.exceptions
-    options:
-      members:
-        - SuppressedCrashError

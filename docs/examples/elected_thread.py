@@ -1,11 +1,10 @@
 import argparse
 import time
 
+import bgt
 import structlog
 
 from sqlalchemy import Engine, create_engine
-
-import pgbg
 
 from pgbg.sqlalchemy import start_elected_service
 
@@ -21,11 +20,11 @@ def do_work() -> bool:
 
 def main(engine: Engine, worker_id: str) -> None:
     svc = start_elected_service(
-        pgbg.as_work_factory(do_work),
+        bgt.as_work_factory(do_work),
         engine,
         name="example-thread",
         worker_id=worker_id,
-        wakeup=pgbg.IntervalOnlyWakeup(),  # still interval-only
+        wakeup=bgt.IntervalOnlyWakeup(),  # still interval-only
         interval=2,
     )
 

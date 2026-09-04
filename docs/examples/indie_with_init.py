@@ -4,11 +4,10 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 
+import bgt
 import structlog
 
-import pgbg
-
-from pgbg.typing import DoWork
+from bgt.typing import DoWork
 
 
 logger = structlog.get_logger()
@@ -37,10 +36,10 @@ def make_work() -> Generator[DoWork]:
 
 
 def main() -> None:
-    svc = pgbg.SupervisedService.start(
+    svc = bgt.SupervisedService.start(
         make_work,
         name="example-thread",
-        wakeup=pgbg.IntervalOnlyWakeup(),  # only wake up on intervals
+        wakeup=bgt.IntervalOnlyWakeup(),  # only wake up on intervals
         interval=2,  # which are 2 seconds
     )
 

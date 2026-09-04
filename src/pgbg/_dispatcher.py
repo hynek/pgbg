@@ -15,9 +15,8 @@ import psycopg
 import psycopg.sql
 import structlog
 
+from bgt import Supervisor
 from prometheus_client import Gauge
-
-from ._supervisor import Supervisor
 
 
 logger = structlog.stdlib.get_logger("pgbg")
@@ -389,7 +388,7 @@ class SupervisedDispatcher:
     ) -> Self:
         """
         Build a dispatcher and start running it under a
-        [`Supervisor`][pgbg.Supervisor].
+        [`Supervisor`][bgt.Supervisor].
 
         Args:
             connect:
@@ -444,7 +443,7 @@ class SupervisedDispatcher:
         """
         Stop the supervision and the dispatch loop.
 
-        See [`Supervisor.stop()`][pgbg.Supervisor.stop].
+        See [`Supervisor.stop()`][bgt.Supervisor.stop].
 
         Args:
             timeout:

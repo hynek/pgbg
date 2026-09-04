@@ -80,6 +80,7 @@ link = "https://pypi.org/project/pgbg/"
 [project.plugins.mkdocstrings.handlers.python]
 inventories = [
     "https://docs.python.org/3/objects.inv",
+    "https://bgt.hynek.me/stable/objects.inv",
     "https://www.psycopg.org/psycopg3/docs/objects.inv",
     "https://docs.sqlalchemy.org/en/stable/objects.inv",
 ]

@@ -1,9 +1,8 @@
 import random
 import time
 
+import bgt
 import structlog
-
-import pgbg
 
 
 logger = structlog.get_logger()
@@ -23,10 +22,10 @@ def do_work() -> bool:
 
 
 def main() -> None:
-    svc = pgbg.SupervisedService.start(
-        pgbg.as_work_factory(do_work),
+    svc = bgt.SupervisedService.start(
+        bgt.as_work_factory(do_work),
         name="example-thread",
-        wakeup=pgbg.IntervalOnlyWakeup(),  # only wake up on intervals
+        wakeup=bgt.IntervalOnlyWakeup(),  # only wake up on intervals
         interval=2,  # which are 2 seconds long
     )
 

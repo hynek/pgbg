@@ -18,7 +18,7 @@ If you use SQLAlchemy, you can use [`start_dispatcher()`][pgbg.sqlalchemy.start_
 
 Once you've started a dispatcher (either using [`SupervisedDispatcher.start()`][pgbg.SupervisedDispatcher.start] or [`start_dispatcher()`][pgbg.sqlalchemy.start_dispatcher]), you can create subscriptions by calling its [`subscribe("channel")` method][pgbg.SupervisedDispatcher.subscribe].
 
-This subscription implements the [`Wakeup`][pgbg.typing.Wakeup] protocol and therefore you can pass it into services for their *wakeup* argument.
+This subscription implements the [`Wakeup`][bgt.typing.Wakeup] protocol and therefore you can pass it into services for their *wakeup* argument.
 
 It works as a coalescing, edge-triggered wakeup signal that ignores the `NOTIFY` payloads, because `LISTEN` / `NOTIFY` is best-effort and supporting payloads would coax people into using it for things [it's not intended for](https://blog.ganssle.io/articles/2023/01/attractive-nuisances.html).
 

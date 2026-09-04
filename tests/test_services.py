@@ -10,28 +10,22 @@ import psycopg.sql
 import pytest
 import structlog
 
+from bgt import IntervalOnlyWakeup, as_work_factory
+from bgt.exceptions import SuppressedCrashError
 from prometheus_client import REGISTRY
 
-from pgbg import (
-    NotifyDispatcher,
-    Service,
-    SupervisedElectedService,
-    SupervisedService,
-    as_work_factory,
-)
+from pgbg import NotifyDispatcher, SupervisedElectedService
 from pgbg._services import (
     SERVICE_LAST_WORK_UNIT,
     SERVICE_LEADERSHIP_CONFIRMED,
     SERVICE_LEASE_FAILURES,
     SERVICE_LEASE_OVERRUNS,
     ElectedService,
-    IntervalOnlyWakeup,
     LeaderTerm,
     _attempt_election,
     _attempt_renewal,
     _resign_as_leader,
 )
-from pgbg.exceptions import SuppressedCrashError
 
 
 _CHANNEL = "pgbg_test_channel"
@@ -717,6 +711,23 @@ class TestRunOnce:
 
         do_work.assert_not_called()
 
+    def test_stamps_the_last_work_unit_gauge(self, build_service):
+        """
+        Every work unit the leader runs stamps the last-work-unit gauge for
+        this service.
+        """
+        before = SERVICE_LAST_WORK_UNIT.labels(
+            name="test-service"
+        )._value.get()
+        service = build_service()
+
+        service._run_once(noop_work, threading.Event())
+
+        assert (
+            before
+            < SERVICE_LAST_WORK_UNIT.labels(name="test-service")._value.get()
+        )
+
     def test_repeats_the_work_unit_while_it_reports_work(self, build_service):
         """
         A `do_work` returning True is re-invoked right away within one wakeup until
@@ -905,6 +916,33 @@ class TestServiceLoopLifecycle:
 
         service.run(stop)
 
+    def test_crashing_from_birth_still_creates_the_last_work_unit_series(
+        self, build_service
+    ):
+        """
+        The last-work-unit series exists from run start, so a staleness alert
+        never sits in no-data for an elected service that cannot complete a
+        work unit.
+        """
+
+        def do_work():
+            """
+            Crash before any work unit completes.
+            """
+            raise RuntimeError("broken from birth")
+
+        service = build_service(
+            work_factory=as_work_factory(do_work), name="test-birth-crash"
+        )
+
+        with pytest.raises(RuntimeError, match="broken from birth"):
+            service.run(threading.Event())
+
+        assert 0.0 == REGISTRY.get_sample_value(
+            "pgbg_service_last_work_unit_timestamp_seconds",
+            {"name": "test-birth-crash"},
+        )
+
     def test_recovers_from_a_work_unit_error(self, run_service):
         """
         A transient error from `do_work` is retried.
@@ -971,25 +1009,6 @@ class TestServiceLoopLifecycle:
 
         service.wake()
         service._wait_for_wakeup()
-
-    def test_interval_only_wakeup_consumes_the_wake(self):
-        """
-        One wait consumes the wake, so the next wait blocks again instead of
-        staying woken forever.
-        """
-        wakeup = IntervalOnlyWakeup()
-
-        wakeup.wake()
-
-        assert True is wakeup.wait(0.01)
-        assert False is wakeup.wait(0.01)
-
-    def test_interval_only_wakeup_is_born_woken(self):
-        """
-        A fresh wakeup starts woken, so a wait-first service runs its first
-        work unit at startup.
-        """
-        assert True is IntervalOnlyWakeup().wait(1000)
 
     def test_runs_and_stops_under_a_real_dispatcher(
         self, run_service, running_dispatcher
@@ -1627,408 +1646,7 @@ class TestLeaseKeeper:
         assert 110 == term._valid_until  # the faster renewal's window
 
 
-class TestService:
-    def test_run_once_repeats_while_work_reports_more(self):
-        """
-        Work units repeat while `do_work` returns True and stop when it reports
-        no further work.
-        """
-        calls = []
-
-        def do_work():
-            """
-            Record the work unit and ask to run twice more.
-            """
-            calls.append(True)
-
-            return len(calls) < 3
-
-        service = Service.build(
-            as_work_factory(do_work),
-            name="plain",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        service._run_once(do_work, threading.Event())
-
-        assert 3 == len(calls)
-
-    def test_run_once_stamps_the_last_work_unit_gauge(self):
-        """
-        Every unit stamps the last-work-unit gauge for this service.
-        """
-        before = SERVICE_LAST_WORK_UNIT.labels(
-            name="plain-service"
-        )._value.get()
-        service = Service.build(
-            as_work_factory(noop_work),
-            name="plain-service",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        service._run_once(noop_work, threading.Event())
-
-        assert (
-            before
-            < SERVICE_LAST_WORK_UNIT.labels(name="plain-service")._value.get()
-        )
-
-    def test_run_returns_without_waiting_when_stopped_mid_work_unit(self):
-        """
-        A stop request during a work unit ends the run without a wait.
-        """
-        stop = threading.Event()
-
-        def do_work():
-            """
-            Request the stop and claim more work.
-            """
-            stop.set()
-
-            return True
-
-        service = Service.build(
-            as_work_factory(do_work),
-            name="plain-stop",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        service.run(stop)
-
-        assert service.has_completed_cycle
-
-    @pytest.mark.parametrize(
-        "bad_kwargs",
-        [{"interval": 0}, {"name": ""}],
-    )
-    def test_build_validates_arguments(self, bad_kwargs):
-        """
-        Bad intervals and empty names are rejected up front.
-        """
-        kwargs = {
-            "name": "plain",
-            "wakeup": IntervalOnlyWakeup(),
-            "interval": 30,
-        } | bad_kwargs
-
-        with pytest.raises(ValueError):
-            Service.build(as_work_factory(noop_work), **kwargs)
-
-    def test_crash_mid_drain_keeps_completed_progress(self):
-        """
-        A work unit that succeeded counts as progress even when a later work
-        unit of the same drain crashes, so the supervisor resets its backoff.
-        """
-        calls = []
-
-        def do_work():
-            """
-            Succeed once, then crash.
-            """
-            calls.append(True)
-            if len(calls) > 1:
-                raise RuntimeError("second work unit crashed")
-
-            return True
-
-        service = Service.build(
-            as_work_factory(do_work),
-            name="plain-drain-crash",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        with pytest.raises(RuntimeError, match="second work unit crashed"):
-            service.run(threading.Event())
-
-        assert service.has_completed_cycle
-
-    def test_crashing_from_birth_still_creates_the_last_work_unit_series(self):
-        """
-        The last-work-unit series exists from run start, so a staleness alert never
-        sits in no-data for a service that cannot complete a work unit.
-        """
-
-        def do_work():
-            """
-            Crash before any work unit completes.
-            """
-            raise RuntimeError("broken from birth")
-
-        service = Service.build(
-            as_work_factory(do_work),
-            name="plain-birth-crash",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        with pytest.raises(RuntimeError, match="broken from birth"):
-            service.run(threading.Event())
-
-        assert 0.0 == REGISTRY.get_sample_value(
-            "pgbg_service_last_work_unit_timestamp_seconds",
-            {"name": "plain-birth-crash"},
-        )
-
-    def test_wait_for_wakeup_times_out_without_a_wake(self):
-        """
-        Without a wake, the wait falls back to the interval timeout.
-        """
-        wakeup = IntervalOnlyWakeup()
-        # Consume the initial wake; this test is about the timeout path.
-        assert True is wakeup.wait(0)
-        service = Service.build(
-            as_work_factory(noop_work),
-            name="plain-timeout",
-            wakeup=wakeup,
-            interval=0.01,
-        )
-
-        with structlog.testing.capture_logs() as logs:
-            service._wait_for_wakeup()
-
-        assert [] == logs
-
-    def test_wait_for_wakeup_returns_on_a_wake(self):
-        """
-        A wake ends the wait promptly and is logged.
-        """
-        wakeup = IntervalOnlyWakeup()
-        wakeup.wake()
-        service = Service.build(
-            as_work_factory(noop_work),
-            name="plain-woken",
-            wakeup=wakeup,
-            interval=30,
-        )
-
-        with structlog.testing.capture_logs() as logs:
-            service._wait_for_wakeup()
-
-        assert ["service.woken"] == [entry["event"] for entry in logs]
-
-    def test_service_wakes_on_a_real_notification(
-        self, running_dispatcher, pgbg_dsn
-    ):
-        """
-        A NOTIFY travels through a real dispatcher and wakes the service for
-        its first work unit.
-        """
-        first_unit = threading.Event()
-
-        def do_work():
-            """
-            Signal the work unit.
-            """
-            first_unit.set()
-
-            return False
-
-        sub = running_dispatcher.subscribe(_CHANNEL)
-        assert sub.initial_listen_established.wait(5)
-        # Drain the wake the LISTEN going live delivered, so only a real
-        # NOTIFY can wake the service into its first work unit.
-        assert True is sub.wait(1)
-
-        with SupervisedService.start(
-            as_work_factory(do_work),
-            name="plain-notified",
-            wakeup=sub,
-            interval=30000,
-            initial_backoff=0.01,
-        ):
-            with psycopg.connect(pgbg_dsn) as conn:
-                conn.execute(
-                    "SELECT pg_notify(%(channel)s, '')",
-                    {"channel": _CHANNEL},
-                )
-                conn.commit()
-
-            assert first_unit.wait(5)
-
-    def test_supervised_service_is_one_handle(self):
-        """
-        start() runs the service under supervision, and the handle stops it as
-        a context manager.
-        """
-        ran = threading.Event()
-
-        def do_work():
-            """
-            Signal that a work unit ran.
-            """
-            ran.set()
-
-            return False
-
-        with SupervisedService.start(
-            as_work_factory(do_work),
-            name="plain-supervised",
-            wakeup=IntervalOnlyWakeup(),
-            interval=0.05,
-            initial_backoff=0.01,
-        ) as handle:
-            assert ran.wait(2)
-            assert handle.is_running
-
-        assert not handle.is_running
-
-
 class TestWorkFactory:
-    def test_as_work_factory_yields_the_plain_callable(self):
-        """
-        The wrapped factory yields the callable itself and hands out a fresh
-        context manager per call.
-        """
-        factory = as_work_factory(noop_work)
-
-        with factory() as first, factory() as second:
-            assert noop_work is first
-            assert noop_work is second
-
-    def test_sets_up_and_cleans_up_around_a_run(self):
-        """
-        A run enters the factory before the first work unit and exits it when
-        the run ends.
-        """
-        events = []
-        stop = threading.Event()
-
-        def do_work():
-            """
-            Record the work unit and request the stop.
-            """
-            events.append("work")
-            stop.set()
-
-            return False
-
-        @contextmanager
-        def work_factory():
-            """
-            Record setup and cleanup around the run.
-            """
-            events.append("setup")
-            try:
-                yield do_work
-            finally:
-                events.append("cleanup")
-
-        service = Service.build(
-            work_factory,
-            name="factory-lifecycle",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        service.run(stop)
-
-        assert ["setup", "work", "cleanup"] == events
-
-    def test_cleanup_runs_on_a_crash(self):
-        """
-        A crashing work unit still unwinds through the factory's cleanup, and
-        the crash propagates.
-        """
-        events = []
-
-        def crashing_work():
-            """
-            Crash the work unit.
-            """
-            raise RuntimeError("simulated work crash")
-
-        @contextmanager
-        def work_factory():
-            """
-            Record cleanup on the way out.
-            """
-            try:
-                yield crashing_work
-            finally:
-                events.append("cleanup")
-
-        service = Service.build(
-            work_factory,
-            name="factory-crash",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        with pytest.raises(RuntimeError, match="simulated work crash"):
-            service.run(threading.Event())
-
-        assert ["cleanup"] == events
-
-    def test_reenters_the_factory_per_run(self):
-        """
-        A crash restart calls the factory again.
-        """
-        setups = []
-        worked = threading.Event()
-
-        def do_work():
-            """
-            Crash the first run's work unit, then signal and stop.
-            """
-            if len(setups) < 2:
-                raise RuntimeError("simulated transient failure")
-            worked.set()
-
-            return False
-
-        @contextmanager
-        def work_factory():
-            """
-            Count the setups.
-            """
-            setups.append(True)
-            yield do_work
-
-        with SupervisedService.start(
-            work_factory,
-            name="factory-reenter",
-            wakeup=IntervalOnlyWakeup(),
-            interval=0.05,
-            initial_backoff=0.01,
-        ):
-            assert worked.wait(1)
-
-        assert 2 == len(setups)
-
-    def test_suppressed_crash_is_raised(self):
-        """
-        A factory that swallows the run's crash raises SuppressedCrashError
-        instead of ending the run silently.
-        """
-
-        def crashing_work():
-            """
-            Crash the work unit.
-            """
-            raise RuntimeError("simulated work crash")
-
-        @contextmanager
-        def swallowing_factory():
-            """
-            Swallow the crash, as a well-meaning user might.
-            """
-            with suppress(RuntimeError):
-                yield crashing_work
-
-        service = Service.build(
-            swallowing_factory,
-            name="factory-swallow",
-            wakeup=IntervalOnlyWakeup(),
-            interval=30,
-        )
-
-        with pytest.raises(SuppressedCrashError):
-            service.run(threading.Event())
-
     def test_suppressed_crash_is_raised_for_an_elected_service(
         self, build_service
     ):

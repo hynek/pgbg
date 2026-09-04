@@ -8,12 +8,13 @@ from typing import Any
 
 import psycopg
 
+from bgt.typing import Wakeup, WorkFactory
 from sqlalchemy import Connection, Engine
 
 from . import _tables
 from ._dispatcher import SupervisedDispatcher
 from ._services import SupervisedElectedService
-from .typing import ConnectionProvider, Wakeup, WorkFactory
+from .typing import ConnectionProvider
 
 
 __all__ = [

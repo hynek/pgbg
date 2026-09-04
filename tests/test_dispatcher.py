@@ -1,15 +1,15 @@
 import threading
 
-from unittest.mock import Mock, call
+from unittest.mock import Mock, call, patch
 
 import psycopg
 import pytest
 
+from bgt import SupervisedService, as_work_factory
 from prometheus_client import REGISTRY
 
 from pgbg import NotifyDispatcher
-from pgbg._dispatcher import DISPATCHER_LAST_CYCLE
-from pgbg._supervisor import SUPERVISOR_RESTARTS
+from pgbg._dispatcher import DISPATCHER_LAST_CYCLE, DispatchLoop
 
 
 def send_notify(dsn, channel, payload=""):
@@ -546,18 +546,17 @@ class TestDispatchLifecycle:
         assert True is orders_sub.wait(1)
         assert True is payments_sub.wait(1)
 
-        restarts_before = SUPERVISOR_RESTARTS.labels(
-            name="dispatch"
-        )._value.get()
+        restarts_before = REGISTRY.get_sample_value(
+            "bgt_supervisor_restarts_total", {"name": "dispatch"}
+        )
         orders_sub.close()
         probe = dispatcher.subscribe("probe")
 
         # The probe establishing proves a reconcile ran after the close;
         # that same reconcile issued the UNLISTEN for orders.
         assert probe.initial_listen_established.wait(1)
-        assert (
-            restarts_before
-            == SUPERVISOR_RESTARTS.labels(name="dispatch")._value.get()
+        assert restarts_before == REGISTRY.get_sample_value(
+            "bgt_supervisor_restarts_total", {"name": "dispatch"}
         )
 
         send_notify(pgbg_dsn, "orders")
@@ -568,3 +567,144 @@ class TestDispatchLifecycle:
 
         assert True is payments_sub.wait(1)
         assert False is orders_sub.wait(0)
+
+
+class TestDispatchLoop:
+    def test_resets_progress_before_a_failing_connect(self):
+        """
+        A connect that fails propagates and leaves the dispatcher's progress
+        flag reset, so a connect storm can't reset the backoff ladder off
+        a stale True from the last healthy run.
+        """
+        dispatcher = NotifyDispatcher()
+        dispatcher._has_completed_cycle = True
+
+        def unreachable():
+            """
+            Fail like an unreachable database.
+            """
+            raise RuntimeError("no route to database")
+
+        runner = DispatchLoop(connect=unreachable, dispatcher=dispatcher)
+
+        with pytest.raises(RuntimeError, match="no route to database"):
+            runner.run(threading.Event())
+
+        assert dispatcher._has_completed_cycle is False
+
+    def test_close_failure_does_not_mask_a_crash(self):
+        """
+        A connection that dies mid-run is closed best-effort, and a close that
+        also fails never masks the run's own crash.
+        """
+        dispatcher = NotifyDispatcher()
+        dispatcher.subscribe("orders")  # forces a LISTEN on reconcile
+
+        broken = Mock()
+        broken.execute.side_effect = RuntimeError("run died")
+        broken.close.side_effect = RuntimeError("close died too")
+
+        runner = DispatchLoop(connect=lambda: broken, dispatcher=dispatcher)
+
+        with pytest.raises(RuntimeError, match="run died"):
+            runner.run(threading.Event())
+
+        assert 1 == broken.close.call_count
+
+    def test_closes_the_connection_on_a_clean_stop(self, pg_connect):
+        """
+        A run that returns because stop is already set still closes its
+        connection.
+        """
+        conn = pg_connect()
+        stop = threading.Event()
+        stop.set()
+
+        runner = DispatchLoop(
+            connect=lambda: conn, dispatcher=NotifyDispatcher()
+        )
+        runner.run(stop)
+
+        assert conn.closed
+
+
+def test_crash_restart_wakes_established_subscribers(run_supervised):
+    """
+    A mid-flight crash is restarted on a fresh connection whose re-LISTENs
+    wake every established subscriber with no NOTIFY ever sent: a crash gap
+    cannot lose wakeups.
+    """
+    dispatcher = NotifyDispatcher(interval=0.05)
+    sentinel = dispatcher.subscribe("sentinel")
+    _, supervisor = run_supervised(dispatcher=dispatcher)
+
+    assert sentinel.initial_listen_established.wait(1)
+    assert True is sentinel.wait(1)
+
+    sub = dispatcher.subscribe("orders")
+
+    assert sub.initial_listen_established.wait(1)
+    # Drain the one wake its own LISTEN going live delivered.
+    assert True is sub.wait(1)
+    assert False is sub.wait(0)
+
+    counter = 0
+    real_reconcile = NotifyDispatcher._reconcile
+
+    def dying_reconcile(self, pgconn, listening):
+        """
+        Fail the next reconcile, then reconcile for real.
+        """
+        nonlocal counter
+
+        counter += 1
+        if counter == 1:
+            raise RuntimeError("simulated mid-flight connection death")
+
+        return real_reconcile(self, pgconn, listening)
+
+    with patch.object(NotifyDispatcher, "_reconcile", dying_reconcile):
+        assert True is sub.wait(2)
+
+    assert counter > 1
+    assert supervisor.is_running
+
+
+def test_subscription_wakes_a_service_on_a_real_notification(
+    running_dispatcher, pgbg_dsn
+):
+    """
+    A NOTIFY travels through a real dispatcher and wakes a *bgt* service
+    that waits on the subscription, for its first work unit.
+    """
+    first_unit = threading.Event()
+
+    def do_work():
+        """
+        Signal the work unit.
+        """
+        first_unit.set()
+
+        return False
+
+    sub = running_dispatcher.subscribe("wakeups")
+    assert sub.initial_listen_established.wait(5)
+    # Drain the wake the LISTEN going live delivered, so only a real
+    # NOTIFY can wake the service into its first work unit.
+    assert True is sub.wait(1)
+
+    with SupervisedService.start(
+        as_work_factory(do_work),
+        name="plain-notified",
+        wakeup=sub,
+        interval=30000,
+        initial_backoff=0.01,
+    ):
+        with psycopg.connect(pgbg_dsn) as conn:
+            conn.execute(
+                "SELECT pg_notify(%(channel)s, '')",
+                {"channel": "wakeups"},
+            )
+            conn.commit()
+
+        assert first_unit.wait(5)

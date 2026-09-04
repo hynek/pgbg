@@ -3,9 +3,5 @@
 ::: pgbg.typing
     options:
       members:
-        - Wakeup
-        - Loop
-        - DoWork
-        - WorkFactory
         - Subscribable
         - ConnectionProvider

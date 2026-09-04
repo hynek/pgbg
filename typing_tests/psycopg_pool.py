@@ -1,13 +1,9 @@
 from typing import assert_type
 
+from bgt import IntervalOnlyWakeup, as_work_factory
 from psycopg_pool import ConnectionPool
 
-from pgbg import (
-    IntervalOnlyWakeup,
-    SupervisedElectedService,
-    as_work_factory,
-    init_db,
-)
+from pgbg import SupervisedElectedService, init_db
 from pgbg.typing import ConnectionProvider
 
 

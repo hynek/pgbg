@@ -2,9 +2,9 @@ import threading
 
 import pytest
 
+from bgt import IntervalOnlyWakeup, as_work_factory
 from sqlalchemy import create_engine, text
 
-from pgbg import IntervalOnlyWakeup, as_work_factory
 from pgbg.sqlalchemy import (
     connection_factory_from_engine,
     init_db,

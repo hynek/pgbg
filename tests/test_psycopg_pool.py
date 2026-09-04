@@ -2,15 +2,11 @@ import threading
 
 import pytest
 
+from bgt import IntervalOnlyWakeup, as_work_factory
 from psycopg.pq import TransactionStatus
 from psycopg_pool import ConnectionPool
 
-from pgbg import (
-    IntervalOnlyWakeup,
-    SupervisedElectedService,
-    as_work_factory,
-    init_db,
-)
+from pgbg import SupervisedElectedService, init_db
 
 
 @pytest.fixture(name="pgbg_pool")

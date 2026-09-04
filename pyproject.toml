@@ -1,8 +1,3 @@
-[tool.uv]
-# Dependency cooldown
-exclude-newer = "1 week"
-
-
 [build-system]
 requires = ["hatchling<2", "hatch-vcs", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
@@ -18,6 +13,7 @@ authors = [{ name = "Hynek Schlawack", email = "hs@ox.cx" }]
 requires-python = ">=3.12"
 dependencies = [
     "attrs",
+    "bgt",
     "prometheus-client",
     "psycopg>=3.2.10",  # older versions lose notifications
     "structlog>=25.3.0",
@@ -49,6 +45,12 @@ Funding = "https://github.com/sponsors/hynek"
 GitHub = "https://github.com/hynek/pgbg"
 Mastodon = "https://mastodon.social/@hynek"
 Bluesky = "https://bsky.app/profile/hynek.me"
+
+
+[tool.uv]
+# Dependency cooldown
+exclude-newer = "1 week"
+exclude-newer-package = { bgt = false }
 
 
 [tool.hatch.version]
@@ -213,7 +215,8 @@ include = ["tests", "conftest.py"]
 
 
 [tool.pyright]
-ignore = ["tests", "conftest.py"]
+# site/ is the docs build output and carries copies of the examples.
+ignore = ["tests", "conftest.py", "site"]
 
 
 [tool.pyrefly]

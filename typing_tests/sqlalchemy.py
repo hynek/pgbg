@@ -2,14 +2,11 @@ from typing import Any, assert_type
 
 import psycopg
 
+from bgt import IntervalOnlyWakeup, as_work_factory
+from bgt.typing import DoWork, WorkFactory
 from sqlalchemy import create_engine
 
-from pgbg import (
-    IntervalOnlyWakeup,
-    SupervisedDispatcher,
-    SupervisedElectedService,
-    as_work_factory,
-)
+from pgbg import SupervisedDispatcher, SupervisedElectedService
 from pgbg.sqlalchemy import (
     connection_factory_from_engine,
     init_db,
@@ -17,7 +14,7 @@ from pgbg.sqlalchemy import (
     start_dispatcher,
     start_elected_service,
 )
-from pgbg.typing import ConnectionProvider, DoWork, WorkFactory
+from pgbg.typing import ConnectionProvider
 
 
 engine = create_engine("postgresql+psycopg://pgbg@127.0.0.1/pgbg")

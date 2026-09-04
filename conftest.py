@@ -1,16 +1,12 @@
 from importlib.util import find_spec
-from unittest.mock import patch
 
 import psycopg
 import pytest
 import structlog
 
-from pgbg import (
-    NotifyDispatcher,
-    SupervisedDispatcher,
-    Supervisor,
-    init_db,
-)
+from bgt import Supervisor
+
+from pgbg import NotifyDispatcher, SupervisedDispatcher, init_db
 from pgbg._dispatcher import DispatchLoop
 
 
@@ -144,9 +140,3 @@ def _run_supervised(pg_connect):
 
     for supervisor in started:
         supervisor.stop()
-
-
-@pytest.fixture(name="no_jitter")
-def _no_jitter():
-    with patch("pgbg._backoff.random.uniform", return_value=1):
-        yield

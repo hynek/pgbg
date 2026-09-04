@@ -6,30 +6,20 @@ from typing import Any, assert_type
 
 import psycopg
 
+from bgt import IntervalOnlyWakeup, Supervisor, as_work_factory
+from bgt.typing import DoWork, Loop, Wakeup, WorkFactory
 from psycopg import sql
 
 from pgbg import (
     ElectedService,
-    IntervalOnlyWakeup,
     NotifyDispatcher,
-    Service,
     Subscription,
     SupervisedDispatcher,
     SupervisedElectedService,
-    SupervisedService,
-    Supervisor,
-    as_work_factory,
     init_db,
     make_create_leases_table_sql,
 )
-from pgbg.typing import (
-    ConnectionProvider,
-    DoWork,
-    Loop,
-    Subscribable,
-    Wakeup,
-    WorkFactory,
-)
+from pgbg.typing import ConnectionProvider, Subscribable
 
 
 def connect() -> psycopg.Connection[Any]:
@@ -68,13 +58,6 @@ def make_work() -> Iterator[DoWork]:
 
 ctx_work_factory: WorkFactory = make_work
 
-interval_only_wakeup = IntervalOnlyWakeup()
-poll_wakeup: Wakeup = interval_only_wakeup
-
-assert_type(interval_only_wakeup.wait(1.0), bool)
-interval_only_wakeup.wake()
-interval_only_wakeup.close()
-
 dispatcher = NotifyDispatcher(interval=0.5)
 subscribable: Subscribable = dispatcher
 
@@ -86,32 +69,6 @@ assert_type(subscription.wait(5.0), bool)
 assert_type(subscription.channel, str)
 assert_type(subscription.initial_listen_established, threading.Event)
 subscription.close()
-
-
-class NullLoop:
-    has_completed_cycle: bool = False
-
-    def run(self, stop: threading.Event) -> None:
-        pass
-
-    def wake(self) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-
-custom_loop: Loop = NullLoop()
-
-supervisor = Supervisor.start(
-    custom_loop, name="dispatch", initial_backoff=0.1
-)
-
-assert_type(supervisor.is_running, bool)
-assert_type(supervisor.stop(1.0), bool)
-
-with Supervisor.start(custom_loop, name="dispatch") as held:
-    assert_type(held, Supervisor)
 
 
 class CustomWakeup:
@@ -151,29 +108,18 @@ service = ElectedService.build(
 )
 elected_loop: Loop = service
 
-plain = Service.build(
-    work_factory,
-    name="stats",
+# An elected service runs under bgt's supervisor like any other loop.
+with Supervisor.start(service, name="orders") as held:
+    assert_type(held, Supervisor)
+
+any_wakeup_service = ElectedService.build(
+    ctx_work_factory,
+    lend,
+    name="orders",
+    worker_id="worker-01",
     wakeup=custom_wakeup,
-    interval=5.0,
 )
-plain_loop: Loop = plain
-
-running_plain = SupervisedService.start(
-    work_factory,
-    name="stats",
-    wakeup=IntervalOnlyWakeup(),
-    interval=5.0,
-    initial_backoff=0.1,
-)
-
-assert_type(running_plain.is_running, bool)
-assert_type(running_plain.stop(5.0), bool)
-
-with SupervisedService.start(
-    make_work, name="stats", wakeup=IntervalOnlyWakeup()
-) as plain_handle:
-    assert_type(plain_handle, SupervisedService)
+assert_type(any_wakeup_service.is_leader, bool)
 
 elected = SupervisedElectedService.start(
     work_factory,

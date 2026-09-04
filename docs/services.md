@@ -13,21 +13,21 @@ If the work unit returns `True`, it is run immediately again.
 This allows for **bounded runtimes** which are important for prompt shutdowns and [leader elections](leader-election.md).
 Once the work unit indicates it is done, the service waits again.
 
-A service also takes an object that implements the [`Wakeup`][pgbg.typing.Wakeup] protocol which allows for real-time wakeups in addition to the interval.
+A service also takes an object that implements the [`Wakeup`][bgt.typing.Wakeup] protocol which allows for real-time wakeups in addition to the interval.
 *pgbg* ships with [`LISTEN` / `NOTIFY`-based](dispatch.md) wakeups, dispatched over a single database connection per process, no less.
 
 
 ## Supervision
 
-A plain running [`Service`][pgbg.Service] is nothing but a blocking loop.
-It's started with its [`run()`][pgbg.Service.run] method which repeatedly calls your work unit.
+A plain running [`Service`][bgt.Service] is nothing but a blocking loop.
+It's started with its [`run()`][bgt.Service.run] method which repeatedly calls your work unit.
 We call one call to `Service.run(stop)` end-to-end a **loop run**.
 A loop run ends when the work unit raises an exception or when the supplied `stop` [`threading.Event`][threading.Event] is set from the outside, which signals a graceful shutdown.
 
 Making such a loop reliable is surprisingly difficult, because you have to entangle your business concerns with error handling and service recovery.
 [Crash-only design](glossary.md#crash-only) is a lot more robust and allows for cleaner code in your work units.
 
-For that, you wrap your [`Service`][pgbg.Service] in a [`Supervisor`][pgbg.Supervisor] which runs it in a **background thread** and **restarts** it whenever it dies.
+For that, you wrap your [`Service`][bgt.Service] in a [`Supervisor`][bgt.Supervisor] which runs it in a **background thread** and **restarts** it whenever it dies.
 A supervisor owns the thread, retry policy, and final cleanup for a background loop.
 
 The supervisor [reports crashed loop runs](observability.md) and starts a new loop run after an exponential backoff with jitter.
@@ -48,7 +48,7 @@ And since you own the resources in your context manager, they survive for the wh
 !!! tip
     This allows you to have "loop [microreboots](glossary.md#microreboot)" that in turn allow your work units to be truly [crash-only](glossary.md#crash-only).
 
-*pgbg* comes with the [`SupervisedService.start()`][pgbg.SupervisedService.start] helper that makes the whole process ergonomic:
+*bgt* comes with the [`SupervisedService.start()`][bgt.SupervisedService.start] helper that makes the whole process ergonomic:
 
 ```python
 def do_work() -> bool:
@@ -67,10 +67,10 @@ def make_work() -> Generator[DoWork]:
         logger.info("work cleanup!")
 
 
-with pgbg.SupervisedService.start(
+with bgt.SupervisedService.start(
     make_work,
     name="example-thread",
-    wakeup=pgbg.IntervalOnlyWakeup(),
+    wakeup=bgt.IntervalOnlyWakeup(),
 ) as svc:
     # do_work runs in the background until we exit this context manager
     ...
@@ -79,19 +79,19 @@ with pgbg.SupervisedService.start(
 !!! tip
     See [Getting Started](tutorial.md) for a complete, runnable example.
 
-If you don't need any setup or cleanup work, you can use [`as_work_factory(do_work)`][pgbg.as_work_factory] to wrap a plain callable into a no-op factory.
+If you don't need any setup or cleanup work, you can use [`as_work_factory(do_work)`][bgt.as_work_factory] to wrap a plain callable into a no-op factory.
 
 
 ## Lifecycle
 
-[`SupervisedService.stop()`][pgbg.SupervisedService.stop] wakes the loop[^via], so a healthy service stops immediately after its current work unit finishes.
+[`SupervisedService.stop()`][bgt.SupervisedService.stop] wakes the loop[^via], so a healthy service stops immediately after its current work unit finishes.
 
-[^via]: Via [`Supervisor.stop()`][pgbg.Supervisor.stop]
+[^via]: Via [`Supervisor.stop()`][bgt.Supervisor.stop]
 
-The supervisor can drive anything that satisfies the small [`Loop`][pgbg.typing.Loop] protocol:
+The supervisor can drive anything that satisfies the small [`Loop`][bgt.typing.Loop] protocol:
 `run(stop)`, `wake()`, `close()`, and a `has_completed_cycle` attribute.
 
-In addition to this chapter's [`Service`][pgbg.Service], `Loop` is also implemented by the headliners from the next chapters: [`ElectedService`][pgbg.ElectedService] and [`NotifyDispatcher`][pgbg.NotifyDispatcher][^indirectly].
+In addition to this chapter's [`Service`][bgt.Service], `Loop` is also implemented by the headliners from the next chapters: [`ElectedService`][pgbg.ElectedService] and [`NotifyDispatcher`][pgbg.NotifyDispatcher][^indirectly].
 
 [^indirectly]: Pedantically, `pgbg.NotifyDispatcher` does not actually implement `Loop`, but *pgbg* comes with an adapter to make it supervisable.
 

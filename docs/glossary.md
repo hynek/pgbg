@@ -2,6 +2,9 @@
 
 There's a lot of similar terms and proper nouns – let's try to untangle them!
 
+*pgbg* builds on [*bgt*](https://bgt.hynek.me/).
+For *bgt*-specific concepts like supervised services, loops, work units, and wakeups, see [its glossary](https://bgt.hynek.me/stable/glossary/).
+
 
 ## General concepts
 
@@ -11,7 +14,7 @@ crash-only software { #crash-only }
     With that, **initialization is recovery**.
     It's ["Have You Tried Turning It Off And On Again?"](https://www.youtube.com/watch?v=5UT8RkSmN4k) for applications.
 
-    In *pgbg*, a supervised service can crash anytime, as long as its [work factory][pgbg.typing.WorkFactory] knows how to initialize all necessary resources.
+    In *pgbg*, a supervised service can crash anytime, as long as its [work factory][bgt.typing.WorkFactory] knows how to initialize all necessary resources.
 
     The concept is closely related to the [*Let It Crash*](https://wiki.c2.com/?LetItCrash) philosophy in the – famously fault-tolerant – [Erlang](https://www.erlang.org) ecosystem.
     The term was coined by George Candea and Armando Fox in their [*Crash-Only Software*](https://www.usenix.org/conference/hotos-ix/crash-only-software) paper.
@@ -31,90 +34,8 @@ microreboot { #microreboot }
 
 ## Services
 
-service
-:   A background thread running a [`Service`][pgbg.Service] or [`ElectedService`][pgbg.ElectedService] in a *loop*.
-
 elected service
 :   A service that uses the *lease* table to best-effort ensure that only **one** service loop runs its work units at a time.
-
-
-## Loops and progress
-
-loop
-:   A long-running, blocking [`Loop.run()`][pgbg.typing.Loop.run] that a *supervisor* drives.
-    Within *pgbg*: the *dispatch loop* or a *service*.
-
-loop cycle
-:   One pass through a loop's body: wait, then act.
-
-    A dispatcher cycle waits for notifications and dispatches them.
-    A service cycle waits for its wakeup and runs work units.
-    A loop reports its progress through its [`has_completed_cycle`][pgbg.typing.Loop.has_completed_cycle] attribute.
-
-loop run
-:   One execution of a loop's `run()`, from start until it returns or crashes.
-    The supervisor starts a new loop run after a backoff.
-
-    Therefore, a *loop run* consists of zero (crashed or stopped before first loop cycle) to infinite (never crashes, never exits) *loop cycles*.
-
-interval
-:   The upper bound on a loop cycle's wait, if not interrupted by a notification or other wakeup.
-    Depending on whether it's a [`Service`][pgbg.Service] or an [`ElectedService`][pgbg.ElectedService], this has different implications.
-    For both it's the maximum wait time between *loop cycles*.
-
-    *Elected services* that are currently followers also try to get the *lease*.
-
-
-## Work
-
-work unit
-:   One call of `do_work`, time-bounded by contract.
-    While `do_work` returns `True`, the next *work unit* runs back-to-back within the same loop cycle.
-    Only *services* have work units.
-
-`do_work`
-:   The callable that performs one work unit per call.
-    It's your code and the reason why *pgbg* exists.
-    Its signature is the [`DoWork`][pgbg.typing.DoWork] protocol.
-
-work factory
-:   Makes a loop run's `do_work` and cleans up when the loop run ends.
-    It is called at the start of every loop run, so setup is also recovery.
-    [`as_work_factory`][pgbg.as_work_factory] wraps a plain `do_work` that needs no setup.
-
-
-## Waking
-
-wakeup
-:   The object a service `wait()`s on between loop cycles.
-    It can be anything that satisfies [`Wakeup`][pgbg.typing.Wakeup], but usually a [`Subscription`][pgbg.Subscription] or an [`IntervalOnlyWakeup`][pgbg.IntervalOnlyWakeup].
-
-wake
-:   The pending signal that a wakeup's `wait()` consumes by returning `True`.
-    [`Wakeup.wake()`][pgbg.typing.Wakeup.wake] delivers one, and any number of pending wakes coalesce into one.
-
-
-## Supervision
-
-supervisor
-:  Owns the thread, the backoff, and the restart policy for one *loop*.
-   Usually a [`Supervisor`][pgbg.Supervisor].
-
-crash
-:   A loop run that ends with an exception.
-
-backoff
-:   The exponentially growing delay between a crash and the next loop run.
-    It resets after a loop run's first completed loop cycle.
-
-stop
-:   The cooperative shutdown request.
-    [`SupervisedService.stop()`][pgbg.SupervisedService.stop] / [`SupervisedElectedService.stop()`][pgbg.SupervisedElectedService.stop] set the loop's stop event and wake it.
-
-handle
-:   A batteries-included supervised facade:
-    [`SupervisedDispatcher`][pgbg.SupervisedDispatcher], [`SupervisedService`][pgbg.SupervisedService], or [`SupervisedElectedService`][pgbg.SupervisedElectedService].
-    It offers `stop()`, `is_running`, and a context manager.
 
 
 ## Leadership
