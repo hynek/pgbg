@@ -33,7 +33,7 @@ Common use cases include:
 
 - Periodic cleanup duties for [expired caches](https://psycache.hynek.me/en/latest/cleanup/#pgbg) or sessions.
 - Maintenance of eventually consistent read models.
-- Lightweight transactional background tasks with the [outbox pattern](https://en.wikipedia.org/wiki/Inbox_and_outbox_pattern).
+- Lightweight background tasks with the [transactional outbox pattern](https://en.wikipedia.org/wiki/Inbox_and_outbox_pattern#The_outbox_pattern).
 
 [^but]: But it's useful for *implementing* worker queues _\~ominous foreshadowing\~_.
 
