@@ -208,8 +208,8 @@ ignore_errors = true
 
 
 [[tool.ty.overrides]]
-include = ["tests", "conftest.py"]
 rules.all = "ignore"
+include = ["tests", "conftest.py"]
 
 
 [tool.pyright]
@@ -219,7 +219,6 @@ ignore = ["tests", "conftest.py"]
 [tool.pyrefly]
 project-includes = ["src", "typing_tests", "docs/examples"]
 project-excludes = ["tests",  "conftest.py"]
-ignore-missing-imports = ["*"]
 
 
 [tool.ruff]
