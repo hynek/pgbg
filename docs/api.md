@@ -1,5 +1,8 @@
 # Core API
 
+For the non-database building blocks (like supervised threads) that *pgbg* builds on, check out [its API documentation](https://bgt.hynek.me/stable/api/).
+
+
 ## Batteries-included
 
 Reach for these first:
