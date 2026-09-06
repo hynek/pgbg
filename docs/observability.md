@@ -1,11 +1,14 @@
 # Observability
 
-Structured log events go to the `pgbg` logger via [*structlog*](https://www.structlog.org).
+Structured log events use [*structlog*](https://www.structlog.org).
+Dispatcher and elected service events go to the `pgbg` logger.
+
+For supervision and plain services, see [*bgt*'s observability documentation](https://bgt.hynek.me/stable/observability/).
 
 
 ## Prometheus metrics
 
-*pgbg* is thoroughly instrumented for the [Prometheus](https://prometheus.io) metrics and monitoring system.
+The following [Prometheus](https://prometheus.io) metrics cover *pgbg*'s dispatcher and elected services.
 
 `pgbg_dispatcher_last_cycle_timestamp_seconds{name}`
 :   Timestamp of the dispatcher's last healthy loop cycle.
@@ -15,19 +18,9 @@ Structured log events go to the `pgbg` logger via [*structlog*](https://www.stru
 
     The series exists at 0 from the start of the dispatch loop, so the alert also catches a dispatcher that never got going.
 
-`pgbg_supervisor_restarts_total{name}`
-:   Crashes that the supervisor restarted after.
-    The supervisor never gives up on a crashing loop[^base], so a chronic failure shows up as a sustained restart rate, not as a dead process.
-    Alert on the rate.
-
-    The series exists at 0 from the supervisor's start, so the very first restart is already visible to `rate()`.
-
-[^base]: Except for a `BaseException` such as `SystemExit`: that ends supervision for good and is only visible in the logs.
-
 `pgbg_service_last_work_unit_timestamp_seconds{name}`
-:   Timestamp of the service's last completed work unit.
-    Staleness per service is the alert signal.
-    For *elected* services, alert on the fleet-wide maximum – `max by (name)` – because healthy followers legitimately sit idle at 0.
+:   Timestamp of the elected service's last completed work unit.
+    Alert on the fleet-wide maximum – `max by (name)` – because healthy followers legitimately sit idle at 0.
 
     The series exists at 0 from the start of a service's first loop run, without clobbering an earlier stamp.
     Therefore, a staleness alert never sits in no-data for a service that cannot complete a work unit.
