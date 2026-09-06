@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 import psycopg
 
-
-if TYPE_CHECKING:
-    from ._dispatcher import Subscription
+from ._dispatcher import Subscription
 
 
 class ConnectionProvider(Protocol):
