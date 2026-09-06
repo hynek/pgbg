@@ -1,6 +1,6 @@
 # Leader Election
 
-An [`ElectedService`][pgbg.ElectedService] is a [`Service`][bgt.Service] whose work units run only while the process holds a leadership lease for that kind of service[^pedant].
+An [`ElectedService`][pgbg.ElectedService] is a [`bgt.Service`][bgt.Service] whose work units run only while the process holds a leadership lease for that kind of service[^pedant].
 
 Use it for work that must not run on every process, such as queue maintenance, cleanups, or projection updates.
 Many processes can run the same service, but a lease row in a caller-supplied table makes sure that only one of them *starts* doing new work.

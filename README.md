@@ -11,26 +11,15 @@
 
 
 <!-- --8<-- [start:spiel] -->
-POV: you want a framework-agnostic way to reliably run a plain[^non-async] function or method in the background, repeatedly, but not all the time.
 
-[^non-async]: As in: not `async`.
+*pgbg* builds on [*bgt*](https://bgt.hynek.me/) (a great way to reliably run background threads) and adds PostgreSQL integration:
 
-*pgbg* comes to the rescue with:
+- A [**`NOTIFY` dispatcher**](https://brandur.org/notifier) that takes **one** database connection per process and wakes up an arbitrary number of background threads.
 
-- A [**`NOTIFY` dispatcher**](https://brandur.org/notifier) that takes **one** database connection per process and wakes up an arbitrary number of subscribers.
-
-- A **supervisor** that runs your code as a *service*: in a loop, in a background thread.
-  If your code crashes, the supervisor restarts the loop.
-  Write [crash-only](https://pgbg.hynek.me/stable/glossary/#crash-only) code, *pgbg* takes care of the rest.
-
-    Your services can wake up on `NOTIFY`s, fixed time intervals, or both.
-
-- PostgreSQL-based **leader election with automatic failover**.
+- A table-based **leader election with automatic failover**.
   Make sure only one process runs work at a time.
 
-- Framework and platform independence.
-
-Background tasks are **not** a traditional worker queue[^but].
+Even with database backing, background tasks are **not** a job queue like Celery or RQ[^but].
 Common use cases include:
 
 - Periodic cleanup duties for [expired caches](https://psycache.hynek.me/en/latest/cleanup/#pgbg) or sessions.
@@ -56,7 +45,7 @@ Check out our [step-by-step tutorial](https://pgbg.hynek.me/stable/tutorial/) to
 The package is available on [PyPI under the `pgbg` name](https://pypi.org/project/pgbg/).
 It comes with two optional extras:
 
-- `sqlalchemy` (`uv pip install 'pgbg[sqlalchemy]'`) currently only adds a `SQLAlchemy>2` lower pin.
+- `sqlalchemy` (`uv pip install 'pgbg[sqlalchemy]'`) currently only adds a `SQLAlchemy>=2` dependency.
 - `pool` (`uv pip install 'pgbg[pool]'`) installs [*psycopg-pool*](https://www.psycopg.org/psycopg3/docs/api/pool.html).
 
 

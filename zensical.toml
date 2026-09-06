@@ -32,6 +32,7 @@ nav = [
     { "Changelog" = "https://github.com/hynek/pgbg/blob/main/CHANGELOG.md" },
   ] },
 ]
+watch = ["README.md"]
 
 [project.theme]
 font = false
