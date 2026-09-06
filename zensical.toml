@@ -17,7 +17,6 @@ extra_javascript = ["assets/javascript/readthedocs.js"]
 nav = [
   { "Overview" = "index.md" },
   "tutorial.md",
-  "services.md",
   "dispatch.md",
   "leader-election.md",
   "observability.md",

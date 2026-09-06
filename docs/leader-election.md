@@ -28,7 +28,8 @@ A plain connect factory works, because a Psycopg connection is its own context m
 With SQLAlchemy, `pooled_connection_factory_from_engine` borrows the connections from the engine's pool instead of opening a fresh one per visit:
 
 ```python
-from pgbg import as_work_factory
+from bgt import as_work_factory
+
 from pgbg.sqlalchemy import start_elected_service
 
 
@@ -66,8 +67,12 @@ On each wake, the service runs work units:
 A keeper thread renews the lease on a fixed cadence for as long as the service runs, **also while a work unit runs**.
 So neither a slow work unit nor a long backlog can outlive the lease while the process is healthy, and `lease_ttl` sizes the failover time after a crash, *not* the work-unit budget.
 
-If a work unit raises an exception, the supervisor [reports the failure](observability.md) and restarts the service after a backoff.
+If a work unit raises an exception, the supervisor [reports the failure](https://bgt.hynek.me/stable/observability/) and restarts the service after a backoff.
 The new loop run acquires the lease again before work continues.
+
+[`SupervisedElectedService.stop(timeout)`][pgbg.SupervisedElectedService.stop] requests shutdown and waits for the current work unit, lease operations, and cleanup.
+If the timeout expires before shutdown finishes, it returns `False`.
+Shutdown attempts to resign the lease, so keep the connection provider available until the service stops.
 
 
 ## Lease overruns

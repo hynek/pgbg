@@ -818,7 +818,7 @@ class SupervisedElectedService:
     from an [SQLAlchemy `Engine`][sqlalchemy.engine.Engine]).
 
     !!! info "See also"
-        - [Supervised Service Loops](services.md)
+        - [Lifecycle](leader-election.md#lifecycle)
         - [Elections](leader-election.md#elections)
     """
 

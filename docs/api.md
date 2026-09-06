@@ -23,7 +23,8 @@ If you're using SQLAlchemy, have also a look at [our helpers](api-sqlalchemy.md)
 You do not have to use *bgt*'s supervision:
 [`ElectedService`][pgbg.ElectedService] and [`NotifyDispatcher`][pgbg.NotifyDispatcher] are plain blocking loops that you can run on a thread you own, for example your main thread, under a process supervisor.
 
-You can also implement a [`Loop`][bgt.typing.Loop] of your own.
+[`ElectedService`][pgbg.ElectedService] implements [`bgt.typing.Loop`][bgt.typing.Loop], so you can pass it directly to [`bgt.Supervisor.start()`][bgt.Supervisor.start].
+[`SupervisedDispatcher`][pgbg.SupervisedDispatcher] uses an internal adapter to connect [`NotifyDispatcher`][pgbg.NotifyDispatcher] to that protocol.
 
 ::: pgbg
     options:
