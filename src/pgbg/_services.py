@@ -6,7 +6,7 @@ import math
 import threading
 import time
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime
 from types import TracebackType
@@ -467,7 +467,7 @@ class LeaderTerm:
             )
 
     @contextmanager
-    def keep_alive(self) -> Iterator[None]:
+    def keep_alive(self) -> Generator[None]:
         """
         Renew the lease from a keeper thread while the block runs.
 

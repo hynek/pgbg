@@ -2,7 +2,7 @@
 Optional SQLAlchemy integration.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -185,7 +185,7 @@ def pooled_connection_factory_from_engine(
     _require_psycopg(engine)
 
     @contextmanager
-    def provide() -> Iterator[psycopg.Connection[Any]]:
+    def provide() -> Generator[psycopg.Connection[Any]]:
         """
         Lend out one pooled Psycopg connection.
         """

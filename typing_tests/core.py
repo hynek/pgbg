@@ -1,6 +1,6 @@
 import threading
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, assert_type
 
@@ -32,7 +32,7 @@ bare_provider: ConnectionProvider = connect
 
 
 @contextmanager
-def lend() -> Iterator[psycopg.Connection[Any]]:
+def lend() -> Generator[psycopg.Connection[Any]]:
     conn = connect()
     try:
         yield conn
@@ -52,7 +52,7 @@ work_factory: WorkFactory = as_work_factory(work)
 
 
 @contextmanager
-def make_work() -> Iterator[DoWork]:
+def make_work() -> Generator[DoWork]:
     yield process_orders
 
 
