@@ -3,10 +3,13 @@ A single, process-wide LISTEN connection that fans out wakeups to in-process
 subscribers.
 """
 
+import socket
 import threading
+import time
 
 from collections.abc import Callable
 from contextlib import closing, suppress
+from selectors import EVENT_READ, DefaultSelector
 from types import TracebackType
 from typing import Any, Self
 
@@ -106,6 +109,68 @@ class Subscription:
 
 
 @attrs.define
+class _SocketWakeup:
+    """
+    A local wake signal that a selector can wait on next to a socket.
+
+    `wake()` sends a byte over a socket pair, which makes the reading end
+    readable. The dispatch loop waits on that end and on its connection's
+    socket at once, so a stop request or a subscription change ends the wait
+    as promptly as a notification does.
+    """
+
+    _reader: socket.socket = attrs.field()
+    _writer: socket.socket = attrs.field()
+    _lock: threading.Lock = attrs.field()
+    _closed: bool = attrs.field()
+
+    def __init__(self) -> None:
+        self._reader, self._writer = socket.socketpair()
+        self._reader.setblocking(False)
+        self._writer.setblocking(False)
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def fileno(self) -> int:
+        """
+        Return the file descriptor that becomes readable on a wake.
+        """
+        return self._reader.fileno()
+
+    def wake(self) -> None:
+        """
+        Make the current or the next wait end.
+
+        Thread-safe, and a safe no-op after `close()`.
+        """
+        with self._lock:
+            if self._closed:
+                return
+
+            # A full buffer means that the wait is ending already.
+            with suppress(BlockingIOError):
+                self._writer.send(b"\x00")
+
+    def drain(self) -> None:
+        """
+        Consume every pending wake, so the next wait blocks again.
+        """
+        # Only an empty buffer ends this, by raising.
+        with suppress(BlockingIOError):
+            while True:
+                self._reader.recv(1024)
+
+    def close(self) -> None:
+        """
+        Close both sockets. Idempotent, and `wake()` stays a safe no-op.
+        """
+        with self._lock:
+            self._closed = True
+            self._reader.close()
+            self._writer.close()
+
+
+@attrs.define
 class NotifyDispatcher:
     """
     Registry of subscriptions plus the blocking dispatch loop.
@@ -113,7 +178,8 @@ class NotifyDispatcher:
     You usually want [`SupervisedDispatcher`][pgbg.SupervisedDispatcher].
     Use this directly to run the dispatch loop on a thread you own: `run` is
     a plain blocking call, so you can put it on your main thread and let
-    your process supervisor restart the process.
+    your process supervisor restart the process. To end it from another
+    thread, set its stop event and call [`wake()`][pgbg.NotifyDispatcher.wake].
 
     The registry outlives any single loop run, so subscriptions stay valid
     across crashes and restarts.
@@ -126,11 +192,11 @@ class NotifyDispatcher:
         init=False, default=False, repr=False
     )
 
-    # Seconds `conn.notifies()` waits for notifications before a loop cycle
-    # re-checks subscriptions for changes. Also the bound on how long `run`
-    # takes to notice its stop event.
+    # Seconds between the liveness probes of an idle loop run. Each probe is
+    # a round trip to the server, and a successful one is what completes a
+    # loop cycle.
     interval: float = attrs.field(
-        default=1.0, validator=attrs.validators.gt(0.0)
+        default=30.0, validator=attrs.validators.gt(0.0)
     )
     # Names this dispatcher in its metric's label. `SupervisedDispatcher`
     # passes its supervisor name down, so the two metrics correlate.
@@ -141,17 +207,20 @@ class NotifyDispatcher:
     _subscriptions: dict[str, list[Subscription]] = attrs.field(
         init=False, factory=dict, repr=False
     )
+    # The running loop's wakeup, so `wake()` can interrupt its wait.
+    _wakeup: _SocketWakeup | None = attrs.field(
+        init=False, default=None, repr=False
+    )
 
     def subscribe(self, channel: str) -> Subscription:
         """
         Subscribe to *channel*.
 
         Multiple subscriptions to the same channel share one `LISTEN`. This
-        only mutates in-process state, so it is legal at any time. The `LISTEN`
-        itself happens at the running loop's next reconcile, within roughly one
-        *interval*, and subscriptions made while no loop is running (including
-        during a crash gap) are picked up by the next loop run's first
-        reconcile.
+        only mutates in-process state, so it is legal at any time. A running
+        loop is woken to issue the `LISTEN` right away, and subscriptions made
+        while no loop is running (including during a crash gap) are picked up
+        by the next loop run's first reconcile.
 
         The channel's subscriptions are woken whenever their `LISTEN` goes
         live, so a subscriber that polls its backlog on every wake misses
@@ -177,6 +246,8 @@ class NotifyDispatcher:
         with self._subs_lock:
             self._subscriptions.setdefault(channel, []).append(subscription)
 
+        self.wake()
+
         return subscription
 
     def _drop_subscription(self, subscription: Subscription) -> None:
@@ -196,6 +267,20 @@ class NotifyDispatcher:
             if not subs:
                 del self._subscriptions[subscription.channel]
 
+        self.wake()
+
+    def wake(self) -> None:
+        """
+        Interrupt the running loop's wait, so it re-checks its stop event and
+        its subscriptions right away.
+
+        Thread-safe, and a no-op while no loop run is active.
+        """
+        # Use a snapshot of wakeup, because `run` unpublishes and closes its
+        # wakeup when it ends. Waking a closed one is a safe no-op.
+        if (wakeup := self._wakeup) is not None:
+            wakeup.wake()
+
     def run(
         self,
         conn: psycopg.Connection[Any],
@@ -203,6 +288,10 @@ class NotifyDispatcher:
     ) -> None:
         """
         Dispatch on *conn* until *stop* is set or something breaks.
+
+        Notifications, stop requests, and subscription changes are handled
+        right away. Every *interval*, the loop checks that the connection is
+        still alive.
 
         Any failure propagates to the caller and ends the loop run.
         """
@@ -216,22 +305,47 @@ class NotifyDispatcher:
         # server enforces it, so a dead network path is NOT covered.
         conn.execute("SELECT set_config('statement_timeout', '5000', false)")
 
-        # A fresh loop run's empty *listening* makes the first reconcile
-        # LISTEN (and thereby wake) every subscribed channel. Notifications
-        # may have been missed while no loop run was listening.
-        listening: set[str] = set()
-        self._reconcile(conn, listening)
+        with (
+            closing(_SocketWakeup()) as wakeup,  # type: ignore[call-arg]
+            DefaultSelector() as selector,
+        ):
+            selector.register(conn, EVENT_READ)
+            selector.register(wakeup, EVENT_READ)
+            # Published before the first stop check, so a stop requested from
+            # now on is either seen by that check or ends the next wait.
+            self._wakeup = wakeup
+            try:
+                # A fresh loop run's empty *listening* makes the first
+                # reconcile LISTEN (and thereby wake) every subscribed
+                # channel. Notifications may have been missed while no loop
+                # run was listening.
+                listening: set[str] = set()
+                self._reconcile(conn, listening)
+                next_probe = time.monotonic() + self.interval
 
-        while not stop.is_set():
-            with closing(conn.notifies(timeout=self.interval)) as notifies:
-                for notify in notifies:
-                    self._route(notify.channel)
+                while not stop.is_set():
+                    if time.monotonic() >= next_probe:
+                        # Ensure the connection is really alive.
+                        conn.execute("SELECT 1")
+                        next_probe = time.monotonic() + self.interval
+                        DISPATCHER_LAST_CYCLE.labels(
+                            name=self.name
+                        ).set_to_current_time()
+                        self._has_completed_cycle = True
 
-            self._reconcile(conn, listening)
-            # Ensure the connection is really alive.
-            conn.execute("SELECT 1")
-            DISPATCHER_LAST_CYCLE.labels(name=self.name).set_to_current_time()
-            self._has_completed_cycle = True
+                    # A zero timeout yields what a statement already pulled
+                    # into Psycopg's backlog and polls the socket once.
+                    with closing(conn.notifies(timeout=0)) as notifies:
+                        for notify in notifies:
+                            self._route(notify.channel)
+
+                    selector.select(max(0.0, next_probe - time.monotonic()))
+                    # Drained before the registry is read, so a change made
+                    # from now on ends the next wait.
+                    wakeup.drain()
+                    self._reconcile(conn, listening)
+            finally:
+                self._wakeup = None
 
     def _reconcile(
         self,
@@ -350,10 +464,9 @@ class DispatchLoop:
 
     def wake(self) -> None:
         """
-        Do nothing. The dispatch loop's `conn.notifies` wait isn't
-        interruptible from another thread, so stop is noticed at the next
-        loop cycle, bounded by the dispatcher's *interval*.
+        Interrupt the dispatcher's wait, so it re-checks the stop event.
         """
+        self._dispatcher.wake()
 
     def close(self) -> None:
         """
@@ -382,7 +495,7 @@ class SupervisedDispatcher:
         cls,
         connect: Callable[[], psycopg.Connection[Any]],
         *,
-        interval: float = 1.0,
+        interval: float = 30.0,
         name: str = "dispatch",
         initial_backoff: float = 0.1,
     ) -> Self:
@@ -396,9 +509,9 @@ class SupervisedDispatcher:
                 (re-)started loop run.
 
             interval:
-                The dispatcher's cycle time: the bound on how long a new
-                subscription waits for its `LISTEN` and on how long `stop`
-                takes to be noticed.
+                Seconds between the liveness probes of an idle dispatch
+                loop. Stop requests and subscription changes do not wait
+                for it.
 
             name:
                 Identifies the supervisor in its thread name, logs, and
