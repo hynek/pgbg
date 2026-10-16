@@ -29,7 +29,7 @@ __all__ = [
 def start_dispatcher(
     engine: Engine,
     *,
-    interval: float = 1.0,
+    interval: float = 30.0,
     name: str = "dispatch",
     initial_backoff: float = 0.1,
 ) -> SupervisedDispatcher:
@@ -39,7 +39,8 @@ def start_dispatcher(
     Since the `LISTEN` connection is long-lived, the *engine*'s pool is only
     used to derive configuration parameters that are used to connect using Psycopg
     directly, so we don't clobber the pool. See
-    [`connection_factory_from_engine()`][pgbg.sqlalchemy.connection_factory_from_engine] for details.
+    [`connection_factory_from_engine()`][pgbg.sqlalchemy.connection_factory_from_engine]
+    for details.
 
     See [`SupervisedDispatcher.start()`][pgbg.SupervisedDispatcher.start] for
     the arguments.

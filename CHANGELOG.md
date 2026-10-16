@@ -18,6 +18,22 @@ The third number identifies emergency releases from older branches.
 
 ## [Unreleased](https://github.com/hynek/pgbg/compare/26.2.0...HEAD)
 
+### Added
+
+- `pgbg.NotifyDispatcher.wake()` that makes a dispatch loop you run yourself notice its stop event at once.
+  [#3](https://github.com/hynek/pgbg/pull/3)
+
+
+### Changed
+
+- Stopping a dispatcher, subscribing, and closing a subscription take effect at once instead of within one *interval*.
+  A `LISTEN` connection that PostgreSQL closes is replaced at once, too.
+  *interval* now only sets how often an idle dispatcher checks that its connection is alive.
+  [#3](https://github.com/hynek/pgbg/pull/3)
+
+- As such, the default *interval* of `pgbg.NotifyDispatcher`, `pgbg.SupervisedDispatcher.start()`, and `pgbg.sqlalchemy.start_dispatcher()` went from 1 to 30 seconds.
+  [#3](https://github.com/hynek/pgbg/pull/3)
+
 
 ## [26.2.0](https://github.com/hynek/pgbg/compare/26.1.0...26.2.0) - 2026-09-06
 

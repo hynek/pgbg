@@ -1,7 +1,12 @@
+import socket
 import threading
 
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
+from selectors import EVENT_READ, DefaultSelector
 from unittest.mock import Mock, call, patch
 
+import attrs
 import psycopg
 import pytest
 
@@ -9,7 +14,11 @@ from bgt import SupervisedService, as_work_factory
 from prometheus_client import REGISTRY
 
 from pgbg import NotifyDispatcher
-from pgbg._dispatcher import DISPATCHER_LAST_CYCLE, DispatchLoop
+from pgbg._dispatcher import (
+    DISPATCHER_LAST_CYCLE,
+    DispatchLoop,
+    _SocketWakeup,
+)
 
 
 def send_notify(dsn, channel, payload=""):
@@ -44,6 +53,59 @@ def listening_channels(conn):
     """
     rows = conn.execute("SELECT pg_listening_channels()")
     return {channel for (channel,) in rows}
+
+
+@pytest.fixture(name="fake_conn")
+def _fake_conn():
+    """
+    A fake connection whose file descriptor is real but never readable, so
+    `run` can register it with its selector and only a wake ends the wait.
+    """
+    reader, writer = socket.socketpair()
+    conn = Mock()
+    conn.fileno.return_value = reader.fileno()
+
+    yield conn
+
+    reader.close()
+    writer.close()
+
+
+@pytest.fixture(name="wakeup")
+def _wakeup():
+    """
+    A socket wakeup that is closed at teardown.
+    """
+    wakeup = _SocketWakeup()
+
+    yield wakeup
+
+    wakeup.close()
+
+
+@attrs.define
+class RecordingDispatcher(NotifyDispatcher):
+    """
+    A dispatcher that reports every reconcile's LISTEN set and every routed
+    channel to a queue, so a test can observe loop passes from the outside.
+    """
+
+    reconciled: Queue = attrs.field(factory=Queue, init=False)
+    routed: Queue = attrs.field(factory=Queue, init=False)
+
+    def _reconcile(self, pgconn, listening):
+        """
+        Reconcile, then report the resulting LISTEN set.
+        """
+        super()._reconcile(pgconn, listening)
+        self.reconciled.put(set(listening))
+
+    def _route(self, channel):
+        """
+        Route, then report the channel.
+        """
+        super()._route(channel)
+        self.routed.put(channel)
 
 
 class TestReconcile:
@@ -299,50 +361,84 @@ class TestRun:
         assert sub.initial_listen_established.is_set()
         assert True is sub.wait(0)
 
-    def test_stops_at_the_cycle_boundary(self):
+    def test_a_stop_with_a_wake_ends_the_wait_without_a_probe(self, fake_conn):
         """
-        A stop set during the notifies window ends the run after that cycle:
-        exactly one window is opened, waiting the dispatcher's *interval*, the
-        cycle issues its `SELECT 1` liveness probe, and the one healthy cycle
-        advances the last-cycle gauge.
+        A stop request followed by a wake, the way `Supervisor.stop()` does
+        it, ends the run at once: the connection sees the session setup and
+        one zero-timeout notification poll, no probe runs, and the last-cycle
+        gauge is untouched.
         """
-        dispatcher = NotifyDispatcher()
+        dispatcher = NotifyDispatcher(interval=30.0)
         stop = threading.Event()
-        # A fake connection is the only way to observe the loop opening
-        # exactly one window and to pin the probe as its one query.
-        conn = Mock()
 
-        def one_window(timeout):
+        def stop_and_wake(timeout):
             """
-            Request the stop, then deliver nothing; fail cleanly
-            instead of hanging if a second window opens.
+            Request the stop from inside the poll and deliver nothing.
             """
-            if stop.is_set():
-                raise AssertionError("unexpected extra notifies window")
-
             stop.set()
+            dispatcher.wake()
             yield from ()
 
-        conn.notifies.side_effect = one_window
+        fake_conn.notifies.side_effect = stop_and_wake
         last_cycle_before = DISPATCHER_LAST_CYCLE.labels(
             name="dispatch"
         )._value.get()
 
-        dispatcher.run(conn, stop)
+        dispatcher.run(fake_conn, stop)
 
+        assert [call(timeout=0)] == fake_conn.notifies.call_args_list
+        # No channel is subscribed, so reconcile issues nothing: only the
+        # session's connection-wide ('false') statement-timeout setup runs.
         assert [
-            call(timeout=dispatcher.interval)
-        ] == conn.notifies.call_args_list
-        # No channel is subscribed, so reconcile issues nothing: after the
-        # session's connection-wide ('false') statement-timeout setup it only
-        # probes the connection.
+            call("SELECT set_config('statement_timeout', '5000', false)"),
+        ] == fake_conn.execute.call_args_list
+        assert not dispatcher._has_completed_cycle
+        assert (
+            last_cycle_before
+            == DISPATCHER_LAST_CYCLE.labels(name="dispatch")._value.get()
+        )
+
+    def test_a_probe_completes_the_cycle(self, fake_conn):
+        """
+        Once the interval has passed, the loop probes the connection with
+        `SELECT 1`, which completes the cycle and advances the last-cycle
+        gauge.
+        """
+        dispatcher = NotifyDispatcher(interval=0.01)
+        stop = threading.Event()
+
+        def stop_after_the_probe(statement, *args):
+            """
+            Let the session setup through and request the stop from the probe.
+            """
+            if statement == "SELECT 1":
+                stop.set()
+                dispatcher.wake()
+
+            return Mock()
+
+        def empty_poll(timeout):
+            """
+            Deliver nothing, so the loop waits out its interval.
+            """
+            yield from ()
+
+        fake_conn.execute.side_effect = stop_after_the_probe
+        fake_conn.notifies.side_effect = empty_poll
+        last_cycle_before = DISPATCHER_LAST_CYCLE.labels(
+            name="dispatch"
+        )._value.get()
+
+        dispatcher.run(fake_conn, stop)
+
         assert [
             call("SELECT set_config('statement_timeout', '5000', false)"),
             call("SELECT 1"),
-        ] == conn.execute.call_args_list
+        ] == fake_conn.execute.call_args_list
+        assert dispatcher._has_completed_cycle
         assert (
-            DISPATCHER_LAST_CYCLE.labels(name="dispatch")._value.get()
-            > last_cycle_before
+            last_cycle_before
+            < DISPATCHER_LAST_CYCLE.labels(name="dispatch")._value.get()
         )
 
     def test_run_creates_the_last_cycle_series_at_zero(self, pg_conn):
@@ -384,18 +480,17 @@ class TestRun:
         with pytest.raises(psycopg.OperationalError):
             dispatcher.run(pg_conn, stop)
 
-    def test_a_failed_liveness_probe_is_crash_only(self):
+    def test_a_failed_liveness_probe_is_crash_only(self, fake_conn):
         """
         The `SELECT 1` liveness probe surfaces a silently-dead connection and
         crashes run.
         """
-        dispatcher = NotifyDispatcher()
+        dispatcher = NotifyDispatcher(interval=0.01)
         dispatcher.subscribe("orders")
         stop = threading.Event()
+
         # A fake connection is the only way to fail the probe selectively
         # while letting LISTEN succeed.
-        conn = Mock()
-
         def execute(statement, *args):
             """
             Let LISTEN through but fail the probe round-trip.
@@ -405,17 +500,17 @@ class TestRun:
 
             return Mock()
 
-        def empty_window(timeout):
+        def empty_poll(timeout):
             """
-            Deliver an empty notifies window so the cycle reaches the probe.
+            Deliver nothing, so the loop waits out its interval and probes.
             """
             yield from ()
 
-        conn.execute.side_effect = execute
-        conn.notifies.side_effect = empty_window
+        fake_conn.execute.side_effect = execute
+        fake_conn.notifies.side_effect = empty_poll
 
         with pytest.raises(RuntimeError, match="simulated dead connection"):
-            dispatcher.run(conn, stop)
+            dispatcher.run(fake_conn, stop)
 
     def test_run_sets_statement_timeout_for_the_session(self, pg_conn):
         """
@@ -567,6 +662,172 @@ class TestDispatchLifecycle:
 
         assert True is payments_sub.wait(1)
         assert False is orders_sub.wait(0)
+
+
+class TestSocketWakeup:
+    def test_wakes_make_the_selector_ready_until_drained(self, wakeup):
+        """
+        Any number of wakes make a selector ready, a drain makes it block
+        again, and a later wake makes it ready again.
+        """
+        with DefaultSelector() as selector:
+            selector.register(wakeup, EVENT_READ)
+            for _ in range(10_000):
+                wakeup.wake()
+
+            assert 1 == len(selector.select(timeout=0))
+
+            wakeup.drain()
+
+            assert [] == selector.select(timeout=0)
+
+            wakeup.wake()
+
+            assert 1 == len(selector.select(timeout=0))
+
+    def test_close_is_safe_during_and_after_concurrent_wakes(self, wakeup):
+        """
+        Closing while other threads wake never raises, and wake and close
+        stay harmless on a closed wakeup.
+        """
+        started = threading.Barrier(3)
+
+        def wake_repeatedly():
+            """
+            Hammer the wakeup once every thread is ready.
+            """
+            started.wait(timeout=2)
+            for _ in range(10_000):
+                wakeup.wake()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(wake_repeatedly) for _ in range(2)]
+            started.wait(timeout=2)
+            wakeup.close()
+            for future in futures:
+                future.result(timeout=2)
+
+        wakeup.wake()
+        wakeup.close()
+
+        assert -1 == wakeup.fileno()
+
+
+class TestInterruptibleWait:
+    def test_a_stop_ends_an_idle_wait_at_once(self, run_supervised):
+        """
+        A stop request ends an idle loop's wait right away instead of after
+        the probe interval.
+        """
+        dispatcher = NotifyDispatcher(interval=5)
+        sub = dispatcher.subscribe("orders")
+        _, supervisor = run_supervised(dispatcher=dispatcher)
+
+        assert sub.initial_listen_established.wait(1)
+        assert supervisor.stop(timeout=0.5)
+
+    def test_a_new_subscription_is_listened_at_once(self, run_supervised):
+        """
+        Subscribing wakes the idle loop, so the LISTEN goes live right away
+        instead of at the next probe.
+        """
+        dispatcher = NotifyDispatcher(interval=5)
+        sentinel = dispatcher.subscribe("sentinel")
+        run_supervised(dispatcher=dispatcher)
+
+        # The sentinel proves that the loop is past its first reconcile.
+        assert sentinel.initial_listen_established.wait(1)
+
+        sub = dispatcher.subscribe("orders")
+
+        assert sub.initial_listen_established.wait(0.5)
+
+    def test_closing_the_last_subscription_unlistens_at_once(
+        self, run_supervised
+    ):
+        """
+        Closing a channel's last subscription wakes the idle loop, so the
+        UNLISTEN runs right away instead of at the next probe.
+        """
+        dispatcher = RecordingDispatcher(interval=5)
+        sub = dispatcher.subscribe("orders")
+        run_supervised(dispatcher=dispatcher)
+
+        assert {"orders"} == dispatcher.reconciled.get(timeout=1)
+
+        sub.close()
+
+        assert set() == dispatcher.reconciled.get(timeout=0.5)
+
+    def test_notifications_buffered_by_a_statement_are_routed_at_once(
+        self, run_supervised, pg_connect, pgbg_dsn
+    ):
+        """
+        A notification that a statement pulled into Psycopg's backlog is
+        routed before the loop waits for socket input, so it is not stuck
+        until the next probe.
+        """
+
+        def connect_with_a_backlog():
+            """
+            Open a connection whose Psycopg backlog holds a notification.
+            """
+            conn = pg_connect()
+            conn.autocommit = True
+            conn.execute("LISTEN orders")
+            send_notify(pgbg_dsn, "orders")
+
+            with DefaultSelector() as selector:
+                selector.register(conn, EVENT_READ)
+                # Once the notification sits in the socket, the next statement
+                # is what reads it into the backlog.
+                assert selector.select(timeout=1)
+
+            conn.execute("SELECT 1")
+
+            return conn
+
+        dispatcher = RecordingDispatcher(interval=5)
+        dispatcher.subscribe("orders")
+        run_supervised(dispatcher=dispatcher, connect=connect_with_a_backlog)
+
+        assert "orders" == dispatcher.routed.get(timeout=0.5)
+
+    def test_a_connection_closed_by_the_server_is_replaced_at_once(
+        self, run_supervised, pg_connect, pgbg_maintenance_conn
+    ):
+        """
+        When PostgreSQL closes the LISTEN connection, the loop crashes on the
+        socket's end of file instead of at the next probe, and the restarted
+        run re-establishes the existing subscriptions.
+        """
+        pids = Queue()
+
+        def connect():
+            """
+            Open a connection and report its backend PID.
+            """
+            conn = pg_connect()
+            pids.put(conn.info.backend_pid)
+
+            return conn
+
+        dispatcher = NotifyDispatcher(interval=5)
+        sub = dispatcher.subscribe("orders")
+        run_supervised(dispatcher=dispatcher, connect=connect)
+        old_pid = pids.get(timeout=1)
+
+        assert sub.initial_listen_established.wait(1)
+        # Drain the wake the first run's LISTEN delivered.
+        assert True is sub.wait(1)
+
+        pgbg_maintenance_conn.execute(
+            "SELECT pg_terminate_backend(%s)", (old_pid,)
+        )
+
+        assert old_pid != pids.get(timeout=2)
+        # The fresh run's re-LISTEN wakes the subscription.
+        assert True is sub.wait(2)
 
 
 class TestDispatchLoop:

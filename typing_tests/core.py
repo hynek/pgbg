@@ -69,6 +69,7 @@ assert_type(subscription.wait(5.0), bool)
 assert_type(subscription.channel, str)
 assert_type(subscription.initial_listen_established, threading.Event)
 subscription.close()
+dispatcher.wake()
 
 
 class CustomWakeup:
