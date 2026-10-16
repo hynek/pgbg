@@ -16,7 +16,7 @@ The third number identifies emergency releases from older branches.
 <!-- changelog follows -->
 
 
-## [Unreleased](https://github.com/hynek/pgbg/compare/26.2.0...HEAD)
+## [26.3.0](https://github.com/hynek/pgbg/compare/26.2.0...26.3.0) - 2026-10-16
 
 ### Added
 
